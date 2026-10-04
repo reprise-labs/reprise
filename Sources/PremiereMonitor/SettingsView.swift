@@ -133,6 +133,16 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
             }
+            // Tried .scrollDisabled(selectedTab == .about) here (03-10-2026) to kill the
+            // pointless rubber-band bounce on a tab that's supposed to always fit — but
+            // disabling scroll doesn't just stop the bounce, it also removes the only way
+            // to reach anything that doesn't quite fit. Content that's "supposed to fit"
+            // isn't a hard guarantee (font rendering, a long update-available string,
+            // whatever) — on this exact machine it turned out About's real content still
+            // slightly exceeded 480pt once the window-height bug below was fixed, and with
+            // scrolling off "Copy log to clipboard" became permanently unreachable with no
+            // scrollbar to even hint it was there. Worse than the bounce it was meant to
+            // fix, so reverted — scrolling stays enabled on every tab, always.
 
             Divider()
             HStack {

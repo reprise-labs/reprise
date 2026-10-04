@@ -58,6 +58,10 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     /// al verstuurd is. Optioneel om dezelfde reden als liveNotified hierboven.
     var dayBeforeCheckNotified: Bool? = nil
     var hourBeforeCheckNotified: Bool? = nil
+    /// When the LIVE capture finished — used to hold off starting the VOD download
+    /// for a short buffer afterward. Optional for the same decode-compatibility
+    /// reason as liveNotified above.
+    var liveFinishedAt: Date? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
 

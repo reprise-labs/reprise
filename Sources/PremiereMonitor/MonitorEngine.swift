@@ -821,9 +821,37 @@ final class MonitorEngine: ObservableObject {
             }
 
             var stderrData = Data()
-            errPipe.fileHandleForReading.readabilityHandler = { handle in
+            var stderrBuffer = ""
+            errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
-                if !data.isEmpty { stderrData.append(data) }
+                guard !data.isEmpty else { return }
+                stderrData.append(data)
+                // --hls-prefer-ffmpeg (used for live captures) hands the actual
+                // downloading to ffmpeg as yt-dlp's own subprocess, and ffmpeg's
+                // progress never looked like yt-dlp's "[download] X%" stdout lines at
+                // all — it's an entirely different format, on stderr, redrawn in
+                // place with \r instead of one line per \n. processDownloadLine
+                // (stdout-only) never saw any of it, so downloadProgress just sat on
+                // its initial "0%" placeholder for the whole capture — confirmed
+                // 04-10-2026, a screenshot showing 0% still unchanged after ~90
+                // minutes of a live recording. Parsed here instead.
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
+                stderrBuffer += chunk
+                while let range = stderrBuffer.rangeOfCharacter(from: CharacterSet(charactersIn: "\r\n")) {
+                    let line = String(stderrBuffer[stderrBuffer.startIndex..<range.lowerBound])
+                    stderrBuffer.removeSubrange(stderrBuffer.startIndex..<range.upperBound)
+                    Task { @MainActor in
+                        guard let tijd = self?.ffmpegOpnameTijd(line) else { return }
+                        self?.downloadProgress[videoId] = tijd
+                        // Also into the visible Log panel, not just the row's small
+                        // progress text — same 3-second throttle as yt-dlp's own
+                        // progress lines use, so a 90-minute capture doesn't flood it
+                        // (user feedback, 04-10-2026: the log showed nothing at all
+                        // for the whole live capture, just silence between the
+                        // pre-live "Check:" lines and the eventual completion).
+                        self?.echoNaarLog(tijd, videoId: videoId, isVoortgang: true)
+                    }
+                }
             }
 
             process.terminationHandler = { proc in
@@ -844,6 +872,25 @@ final class MonitorEngine: ObservableObject {
     }
 
     private var lastCapturedFilePath: [UUID: String] = [:]
+
+    /// ffmpeg's own stderr progress line (used via --hls-prefer-ffmpeg for live
+    /// captures) looks like:
+    ///   frame= 1234 fps=25 q=-1.0 size=  512000kB time=00:12:34.56 bitrate=... speed=1.0x
+    /// A percentage is meaningless here regardless (the total length of a live
+    /// stream isn't knowable in advance, same reasoning as the VOD-vs-live split
+    /// elsewhere in this file) — but elapsed recording time is both knowable and
+    /// actually useful, so that's shown instead of leaving the row stuck on its
+    /// initial "0%" for the entire capture.
+    private func ffmpegOpnameTijd(_ line: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: "time=(\\d+):(\\d\\d):(\\d\\d)"),
+              let m = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              let r1 = Range(m.range(at: 1), in: line), let r2 = Range(m.range(at: 2), in: line),
+              let r3 = Range(m.range(at: 3), in: line),
+              let h = Int(line[r1]), let min = Int(line[r2]), let sec = Int(line[r3]) else { return nil }
+        if h > 0 { return "🔴 recording \(h)h \(min)m" }
+        if min > 0 { return "🔴 recording \(min)m \(sec)s" }
+        return "🔴 recording \(sec)s"
+    }
 
     /// De fragmentstand uit een yt-dlp-regel, als tekst om te tonen.
     ///
@@ -932,6 +979,18 @@ final class MonitorEngine: ObservableObject {
         }
         if let klaar = vanDitItem.first(where: { !isLosseTrack($0) }) {
             log("[\(label)] Stream ended, but the file is fully there.")
+            // Any other loose per-format files for this same item are yt-dlp's own
+            // intermediates that it normally deletes itself after a clean merge —
+            // it doesn't get the chance to when it exits with an error code first
+            // (the exact situation this function exists for), leaving multi-GB
+            // .f137/.f140/.f251 files behind forever (user feedback, 03-10-2026,
+            // screenshots from two different Macs both showing this). Safe to
+            // clear here specifically because we've just confirmed the real,
+            // complete file already exists — the merge branch below is separately
+            // careful to only ever delete the two files it itself just combined.
+            for naam in vanDitItem where isLosseTrack(naam) {
+                try? fm.removeItem(atPath: pad(naam))
+            }
             return pad(klaar)
         }
 
@@ -965,6 +1024,11 @@ final class MonitorEngine: ObservableObject {
             return nil
         }
         log("[\(label)] Merged → \(doel)")
+        // Only the two sources we just combined — not a broader sweep of
+        // whatever else matches this item, since an unrelated loose file
+        // could still be another attempt's only surviving copy.
+        try? fm.removeItem(atPath: pad(v))
+        try? fm.removeItem(atPath: pad(a))
         return doel
     }
 
@@ -1078,18 +1142,25 @@ final class MonitorEngine: ObservableObject {
     /// de video zelf. "The page needs to be reloaded" is wat YouTube teruggeeft
     /// op een sessie die het niet vertrouwt.
     ///
-    /// "could not find chrome cookies database" hoort hier ook bij, ook al is
-    /// de oorzaak anders (macOS TCC blokkeert de toegang tot Chrome's profiel,
+    /// "could not find ... cookies database" hoort hier ook bij, ook al is de
+    /// oorzaak anders (macOS TCC blokkeert de toegang tot het browserprofiel,
     /// i.p.v. een door YouTube geweigerde sessie). Op 26-09-2026 ontbrak deze
     /// regel: elke poging crashte op een onherkende fout, een vol uur lang bij
     /// elke aanroep opnieuw, zonder ooit de zonder-cookies-fallback te
     /// proberen — exact het scenario waar deze functie voor bedoeld is.
+    ///
+    /// Browser-onafhankelijk geschreven (niet "chrome cookie" hardcoded) sinds
+    /// 03-10-2026: op een Mac met Safari als cookiebron matchte een technisch
+    /// leesprobleem met Safari's cookie-opslag deze checks niet, waardoor zo'n
+    /// fout nooit als cookieprobleem werd herkend — enkel toeval (een andere
+    /// zin matchte toch) voorkwam dat de fallback-naar-zonder-cookies werd
+    /// overgeslagen.
     private func cookieFoutmelding(_ stderr: String) -> Bool {
         let s = stderr.lowercased()
         return s.contains("page needs to be reloaded")
             || s.contains("sign in to confirm")
-            || s.contains("could not copy chrome cookie")
-            || s.contains("could not find chrome cookies database")
+            || (s.contains("could not copy") && s.contains("cookie"))
+            || (s.contains("could not find") && s.contains("cookies database"))
             || s.contains("no video formats found")
     }
 
@@ -1295,6 +1366,11 @@ final class MonitorEngine: ObservableObject {
     /// The check interval once we've backed off.
     private let stalledCheckInterval: TimeInterval = 30 * 60
     private var lastStalledCheck: [UUID: Date] = [:]
+    /// How long to hold off starting the VOD download after LIVE finished, giving
+    /// YouTube's backend time to expose the real adaptive-quality formats instead
+    /// of just the as-broadcast one. See the "vod" branch in checkVideo for the
+    /// full story (03-10-2026).
+    private let vodFormatSettleDelay: TimeInterval = 3 * 60
 
     /// Last time a failure notification was sent per video (not persisted).
     private var lastFailureNotify: [UUID: Date] = [:]
@@ -1449,6 +1525,7 @@ final class MonitorEngine: ObservableObject {
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
             if ok {
+                v.liveFinishedAt = Date()
                 notify(title: "Live download complete", message: "\(v.label) — now waiting for the VOD version.")
             } else {
                 v.retryNotBefore = Date().addingTimeInterval(5 * 60)
@@ -1456,6 +1533,21 @@ final class MonitorEngine: ObservableObject {
                 notifyFailureThrottled(videoId: v.id, title: "Live download failed", message: "\(v.label) — check the log on the Mac Mini.")
             }
         } else if phase == "vod", !v.vodDone {
+            // YouTube doesn't expose the proper adaptive-quality VOD formats the
+            // instant a stream ends — right after, only the as-broadcast format is
+            // listed, so grabbing the VOD immediately silently settles for a much
+            // worse quality than what's available a few minutes later. Confirmed
+            // 03-10-2026 with two Macs checking one second apart: one got the full
+            // 2.77GiB avc1 video + audio, the other got a single 407MiB fallback —
+            // pure timing luck, not a real difference in what was available. This
+            // buffer only applies when we captured the live portion ourselves (so
+            // we know exactly when it ended); if the live window was missed
+            // entirely there's no such timestamp to wait from, so that case still
+            // proceeds immediately as before.
+            if let finishedAt = v.liveFinishedAt, Date().timeIntervalSince(finishedAt) < vodFormatSettleDelay {
+                writeBack(v, id: videoId)
+                return
+            }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
             let (ok, path) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id)

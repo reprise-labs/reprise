@@ -331,14 +331,38 @@ final class StatusItemController: NSObject {
         closeStrayWindows()
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 480),
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 500),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Settings"
             window.isReleasedWhenClosed = false
+            // Resizable, but not below what the content actually needs — without this a
+            // manual drag-to-shrink at some point earlier in the session (the window stays
+            // open/reused across the whole app run, not recreated fresh each time) left it
+            // smaller than About's content, forcing a real scrollbar there while every other
+            // tab still fit and showed none (user feedback, 03-10-2026: same build, same
+            // window, but a scrollbar on one machine and not the other — this is why).
+            // 500, not a bare 480: 480 turned out to be an exact-fit calculation with zero
+            // margin — on the machine that surfaced this bug, About's real content was a
+            // few pixels taller than 480 even after the fix, clipping "Copy log to
+            // clipboard" silently (scrolling is always enabled — see SettingsView — so the
+            // overflow at least would have been reachable, but there's no reason to run
+            // that close to the edge when a little headroom is free).
+            window.minSize = NSSize(width: 460, height: 500)
             self.settingsWindow = window
+        }
+        // minSize above only stops it shrinking any further from here — doesn't undo a
+        // shrink that already happened earlier in this same running session, since the
+        // window itself is reused rather than recreated on every open. Grow it back up if
+        // needed, same way minSize would have prevented in the first place; anchored so it
+        // grows downward instead of the titlebar jumping.
+        if let window = settingsWindow, window.frame.height < 500 {
+            var frame = window.frame
+            frame.origin.y -= (500 - frame.height)
+            frame.size.height = 500
+            window.setFrame(frame, display: false)
         }
         settingsWindow?.contentView = NSHostingView(rootView: SettingsView())
         showAuxiliaryWindow(settingsWindow!)

@@ -50,10 +50,17 @@ struct ContentView: View {
     /// leftover window height to the log pane below instead, which can always use more
     /// room. Still grows normally up to the original 260 once there's enough content to
     /// fill it (3+ rows).
+    ///
+    /// Based on the larger of the two tabs' row counts, not just whichever is currently
+    /// selected — using only the active tab's count meant switching between Tracked and
+    /// Upcoming visibly resized this pane (and shifted the log below it) purely because
+    /// the two tabs happened to hold a different number of items, which read as broken
+    /// rather than intentional (user feedback, 03-10-2026, screenshots of the two tabs
+    /// at different heights with the log line landing in a different spot on each).
     private var videoListMaxHeight: CGFloat {
         let header: CGFloat = 56
         let approxRowHeight: CGFloat = 72
-        let rowCount = selectedSection == .tracked ? sortedVideos.count : engine.discoveredVideos.count
+        let rowCount = max(sortedVideos.count, engine.discoveredVideos.count)
         let content = header + CGFloat(max(rowCount, 1)) * approxRowHeight
         return min(max(content, 160), 260)
     }
@@ -150,15 +157,34 @@ struct ContentView: View {
                             }
                             .padding(.horizontal)
                             .padding(.top, 4)
+                            .padding(.bottom, 8)
                         }
                     }
                 } else {
                     if engine.discoveredVideos.isEmpty {
-                        ContentUnavailableView(
-                            "No new premieres found",
-                            systemImage: "antenna.radiowaves.left.and.right",
-                            description: Text("Reprise checks your watched channels once a day.")
-                        )
+                        // Wrapped in a ScrollView (even though there's nothing to scroll)
+                        // specifically so .refreshable has something to attach to — a bare
+                        // ContentUnavailableView can't host the pull-to-refresh gesture, and
+                        // this empty state is exactly when you'd most want to manually
+                        // trigger a check rather than wait up to a day (user feedback,
+                        // 04-10-2026). .frame(maxHeight: .infinity) alone doesn't center it
+                        // inside a ScrollView the way it did outside one — a ScrollView only
+                        // ever gives its content the content's own intrinsic height, so it
+                        // sat flush at the top instead. The outer GeometryReader hands down
+                        // the pane's real height as a minHeight instead, which does center it.
+                        GeometryReader { outerGeo in
+                            ScrollView {
+                                ContentUnavailableView(
+                                    "No new premieres found",
+                                    systemImage: "antenna.radiowaves.left.and.right",
+                                    description: Text("Reprise checks your watched channels once a day.")
+                                )
+                                .frame(maxWidth: .infinity, minHeight: outerGeo.size.height, alignment: .center)
+                            }
+                            .refreshable {
+                                await engine.checkChannels(force: true)
+                            }
+                        }
                         .frame(maxHeight: .infinity)
                     } else {
                         ScrollView {
@@ -192,6 +218,10 @@ struct ContentView: View {
                             }
                             .padding(.horizontal)
                             .padding(.top, 4)
+                            .padding(.bottom, 8)
+                        }
+                        .refreshable {
+                            await engine.checkChannels(force: true)
                         }
                     }
                 }
@@ -282,7 +312,10 @@ struct VideoRow: View {
     // whether anything was actually close to happening — user feedback, 03-10-2026.
     // Active checking only starts checkLeadMinutes before the scheduled time (15 min
     // by default), but this just nudges the row's color in the last hour so it reads
-    // as "getting close" well before that.
+    // as "getting close" well before that. Orange, matching "Waiting for VOD" — tried
+    // teal first to keep the two visually distinct (different kind of "waiting"), but
+    // user feedback the same day preferred one shared color for every "something's
+    // about to happen" state instead.
     private var isSoon: Bool {
         guard video.status == .waiting else { return false }
         let secondsUntil = video.scheduledDate.timeIntervalSinceNow
@@ -329,7 +362,7 @@ struct VideoRow: View {
                     Text("in \(video.scheduledDate, style: .relative)")
                         .font(.caption2)
                         .fontWeight(isSoon ? .semibold : .regular)
-                        .foregroundStyle(isSoon ? AnyShapeStyle(Color.teal) : AnyShapeStyle(.tertiary))
+                        .foregroundStyle(isSoon ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
                 }
                 if let lastChecked = video.lastChecked {
                     Text("Last checked \(lastChecked, style: .relative) ago")
@@ -412,7 +445,7 @@ struct VideoRow: View {
     }
 
     private var statusColor: Color {
-        if isSoon { return .teal }
+        if isSoon { return .orange }
         switch video.status {
         case .waiting: return .gray
         case .downloadingLive: return .red
