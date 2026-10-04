@@ -1157,11 +1157,19 @@ final class MonitorEngine: ObservableObject {
     /// overgeslagen.
     private func cookieFoutmelding(_ stderr: String) -> Bool {
         let s = stderr.lowercased()
-        return s.contains("page needs to be reloaded")
-            || s.contains("sign in to confirm")
-            || (s.contains("could not copy") && s.contains("cookie"))
-            || (s.contains("could not find") && s.contains("cookies database"))
-            || s.contains("no video formats found")
+        if s.contains("page needs to be reloaded") || s.contains("sign in to confirm")
+            || s.contains("no video formats found") {
+            return true
+        }
+        // Checked per line, not across the whole (often multi-line) stderr blob —
+        // requiring both halves on the same line avoids a false match where "could
+        // not copy" appears on one unrelated line and "cookie" happens to appear
+        // on a completely different one elsewhere in the same output (found during
+        // review, 04-10-2026, right after generalizing this past "chrome"-only).
+        return s.split(separator: "\n").contains { line in
+            (line.contains("could not copy") && line.contains("cookie"))
+                || (line.contains("could not find") && line.contains("cookies database"))
+        }
     }
 
     private func metaArgs(url: String, metCookies: Bool) -> [String] {
