@@ -10,6 +10,7 @@ struct ContentView: View {
     /// own clearly-separate place.
     private enum MainSection { case tracked, upcoming }
     @State private var selectedSection: MainSection = .tracked
+    @State private var isRefreshingUpcoming = false
 
     private var sortedVideos: [MonitoredVideo] {
         engine.videos.sorted { $0.scheduledDate < $1.scheduledDate }
@@ -81,6 +82,32 @@ struct ContentView: View {
                     sectionTabButton(.tracked, title: "Tracked", badgeCount: nil)
                     sectionTabButton(.upcoming, title: "Upcoming", badgeCount: engine.discoveredVideos.count)
                     Spacer()
+
+                    if selectedSection == .upcoming {
+                        // .refreshable (pull-to-refresh) used to live on the Upcoming list
+                        // for exactly this — checking now instead of waiting up to a day —
+                        // but in a popover this short, macOS's refresh spinner had nowhere
+                        // proper to draw itself and rendered as a small clipped glitch, with
+                        // a stray scrollbar appearing even on the empty, nothing-to-scroll
+                        // state (user screenshot, 04-10-2026). A plain button sidesteps both.
+                        Button {
+                            guard !isRefreshingUpcoming else { return }
+                            isRefreshingUpcoming = true
+                            Task {
+                                await engine.checkChannels(force: true)
+                                isRefreshingUpcoming = false
+                            }
+                        } label: {
+                            if isRefreshingUpcoming {
+                                ProgressView().controlSize(.small).frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                        }
+                        .disabled(isRefreshingUpcoming)
+                        .help("Check watched channels now")
+                    }
+
                     Button {
                         engine.openDownloadFolder()
                     } label: {
@@ -162,29 +189,11 @@ struct ContentView: View {
                     }
                 } else {
                     if engine.discoveredVideos.isEmpty {
-                        // Wrapped in a ScrollView (even though there's nothing to scroll)
-                        // specifically so .refreshable has something to attach to — a bare
-                        // ContentUnavailableView can't host the pull-to-refresh gesture, and
-                        // this empty state is exactly when you'd most want to manually
-                        // trigger a check rather than wait up to a day (user feedback,
-                        // 04-10-2026). .frame(maxHeight: .infinity) alone doesn't center it
-                        // inside a ScrollView the way it did outside one — a ScrollView only
-                        // ever gives its content the content's own intrinsic height, so it
-                        // sat flush at the top instead. The outer GeometryReader hands down
-                        // the pane's real height as a minHeight instead, which does center it.
-                        GeometryReader { outerGeo in
-                            ScrollView {
-                                ContentUnavailableView(
-                                    "No new premieres found",
-                                    systemImage: "antenna.radiowaves.left.and.right",
-                                    description: Text("Reprise checks your watched channels once a day.")
-                                )
-                                .frame(maxWidth: .infinity, minHeight: outerGeo.size.height, alignment: .center)
-                            }
-                            .refreshable {
-                                await engine.checkChannels(force: true)
-                            }
-                        }
+                        ContentUnavailableView(
+                            "No new premieres found",
+                            systemImage: "antenna.radiowaves.left.and.right",
+                            description: Text("Reprise checks your watched channels once a day — use the refresh button above to check now.")
+                        )
                         .frame(maxHeight: .infinity)
                     } else {
                         ScrollView {
@@ -219,9 +228,6 @@ struct ContentView: View {
                             .padding(.horizontal)
                             .padding(.top, 4)
                             .padding(.bottom, 8)
-                        }
-                        .refreshable {
-                            await engine.checkChannels(force: true)
                         }
                     }
                 }

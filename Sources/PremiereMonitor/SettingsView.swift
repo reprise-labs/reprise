@@ -418,17 +418,18 @@ struct SettingsView: View {
 
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Fixed minHeight so the "Links"/"Troubleshooting" sections below don't
-            // jump around as this block's content changes shape (no update → update
-            // available → downloading) — user feedback, 02-10-2026, with screenshots
-            // showing everything below sliding down a different amount per state.
-            // 150 (the first guess) wasn't quite enough: measured live across all
-            // three states on 03-10-2026 (triggered with a temporary dummy GitHub
-            // release), the downloading+banner combo sat 14pt taller than the other
-            // two, so Links/Troubleshooting still shifted down slightly. 165 covers
-            // the actual tallest state with a small margin. The result-text rows
-            // reserve their line even when empty (opacity 0) rather than being added
-            // and removed, which is the other half of what was causing the jump.
+            // Used to reserve a fixed minHeight here (165pt) so "Links"/"Troubleshooting"
+            // below wouldn't jump around as this block's content changes shape (no
+            // update → update available → downloading). But reserving for the tallest
+            // state meant every *other* state carried dead space that pushed everything
+            // below it closer to the window's bottom edge — tight enough on this Mac
+            // Mini that a few pixels of font-rendering difference on another Mac tipped
+            // About into actually needing to scroll (user feedback, 04-10-2026). A
+            // slight reflow of Links/Troubleshooting between states beats a scrollbar
+            // that's always one font-metrics difference away from appearing, so this
+            // reservation is gone. The result-text rows still reserve their line even
+            // when empty (opacity 0) rather than being added and removed, same reason
+            // as before — no need for that one to also jump.
             VStack(alignment: .leading, spacing: 6) {
                 if let progress = engine.updateProgress {
                     VStack(alignment: .leading, spacing: 4) {
@@ -490,7 +491,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .opacity(updateCheckResult == nil ? 0 : 1)
             }
-            .frame(minHeight: 165, alignment: .top)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Links")
