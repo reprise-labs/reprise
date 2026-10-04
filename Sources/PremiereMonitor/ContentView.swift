@@ -192,7 +192,17 @@ struct ContentView: View {
                         ContentUnavailableView(
                             "No new premieres found",
                             systemImage: "antenna.radiowaves.left.and.right",
-                            description: Text("Reprise checks your watched channels once a day — use the refresh button above to check now.")
+                            // Used to also say "— use the refresh button above to check now."
+                            // here, but that extra clause wrapped to a line more than this
+                            // pane has room for — invisible with auto-hiding scrollbars, but
+                            // ContentUnavailableView apparently scrolls internally when its
+                            // content doesn't fit, so with "Always show scroll bars" (common
+                            // with an external mouse, e.g. a MacBook docked at a desk) that
+                            // extra line showed up as a persistent scrollbar on a view with
+                            // nothing meaningful to scroll (user report + screenshot,
+                            // 04-10-2026). The refresh button has its own tooltip; it doesn't
+                            // need explaining here too.
+                            description: Text("Reprise checks your watched channels once a day.")
                         )
                         .frame(maxHeight: .infinity)
                     } else {
