@@ -44,6 +44,15 @@ final class MonitorEngine: ObservableObject {
     }
     private var ffmpegPath: String? { MonitorEngine.findExecutable("ffmpeg") }
     private var brewPath: String? { MonitorEngine.findExecutable("brew") }
+    // Reprise.app is launched by LaunchServices, not a shell, so its PATH is
+    // just /usr/bin:/bin:/usr/sbin:/sbin — confirmed 04-10-2026 via `ps eww`.
+    // yt-dlp needs a JS runtime (deno/node/bun) to solve YouTube's
+    // "n-signature" anti-bot challenge; without one it's not just the cookie
+    // fallback that misfires (see cookieFoutmelding) — formats can go missing
+    // outright, including the higher-bitrate variant YouTube Premium accounts
+    // get on some videos. Passing deno's absolute path explicitly means it
+    // doesn't matter that it's not on this process's PATH.
+    private var denoPath: String? { MonitorEngine.findExecutable("deno") }
 
     private let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)"
 
@@ -1203,6 +1212,7 @@ final class MonitorEngine: ObservableObject {
             "--user-agent", userAgent,
         ]
         if metCookies, let browser = cookieBrowser { args += ["--cookies-from-browser", browser.ytdlpName] }
+        if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
         args.append(url)
         return args
     }
@@ -1346,6 +1356,15 @@ final class MonitorEngine: ObservableObject {
             "--print", "after_move:%(filepath)s",
             "-o", outTemplate
         ]
+        if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
+        // Merging the separate video/audio tracks ("-f bv*+ba") needs ffmpeg.
+        // Without this flag yt-dlp looks for it on PATH, which — same story as
+        // deno above — Reprise.app's LaunchServices environment doesn't have.
+        // The Lenny Kravitz capture on 03-10-2026 still ended up merged, but
+        // only because reddenNaFout()'s manual-merge rescue (which does use
+        // the correctly-discovered ffmpegPath) papered over it after yt-dlp
+        // errored out — a safety net, not something to depend on.
+        if let ffmpegPath { args += ["--ffmpeg-location", ffmpegPath] }
         let browser = cookieBrowser
         if !cookiesGeweigerd, let browser {
             args += ["--cookies-from-browser", browser.ytdlpName]
