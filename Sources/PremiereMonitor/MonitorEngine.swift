@@ -811,7 +811,16 @@ final class MonitorEngine: ObservableObject {
                 let data = handle.availableData
                 guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
                 stdoutBuffer += chunk
-                while let range = stdoutBuffer.range(of: "\n") {
+                // Live captures (--live-from-start) turned out — confirmed 04-10-2026
+                // with two separate real live streams, neither of which ever spawned
+                // ffmpeg despite --hls-prefer-ffmpeg — to go through yt-dlp's own
+                // "dashsegments"/hlsnative downloader instead. Its per-fragment
+                // progress line is redrawn in place with \r, not terminated with \n
+                // like every other yt-dlp output line, so it sat in stdoutBuffer
+                // forever and processDownloadLine() — which already parses
+                // "(frag N)" correctly via fragmentStand() — never saw it. Splitting
+                // on \r too is what the earlier stderr/ffmpeg fix should have been.
+                while let range = stdoutBuffer.rangeOfCharacter(from: CharacterSet(charactersIn: "\r\n")) {
                     let line = String(stdoutBuffer[stdoutBuffer.startIndex..<range.lowerBound])
                     stdoutBuffer.removeSubrange(stdoutBuffer.startIndex..<range.upperBound)
                     Task { @MainActor in
@@ -1051,8 +1060,23 @@ final class MonitorEngine: ObservableObject {
     }
 
     private func processDownloadLine(_ line: String, videoId: UUID) {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Video and audio fetch concurrently during a live capture, and yt-dlp
+        // interleaves their per-fragment progress on stdout with a "1: "/"2: "
+        // thread prefix so you can tell them apart in a terminal. Confirmed
+        // 04-10-2026: that prefix made hasPrefix("[download]") below fail for
+        // every single one of those lines, so fragmentStand() never ran and the
+        // row sat on "0%" even after fixing the \r/\n splitting that was
+        // originally blamed. One-off lines like "[download] Destination: …"
+        // never carry this prefix, so stripping it is a no-op for those.
+        if let colon = trimmed.firstIndex(of: ":"),
+           trimmed.index(after: colon) < trimmed.endIndex,
+           trimmed[trimmed.index(after: colon)] == " ",
+           !trimmed[trimmed.startIndex..<colon].isEmpty,
+           trimmed[trimmed.startIndex..<colon].allSatisfy(\.isNumber) {
+            trimmed = String(trimmed[trimmed.index(colon, offsetBy: 2)...])
+        }
         if trimmed.hasPrefix("[") {
             echoNaarLog(trimmed, videoId: videoId, isVoortgang: trimmed.hasPrefix("[download]"))
         }
@@ -1193,15 +1217,17 @@ final class MonitorEngine: ObservableObject {
     private func fetchMeta(url: String) async -> FetchMetaResult {
         var (rc, out, err) = await runProcess(ytDlpPath, metaArgs(url: url, metCookies: !cookiesGeweigerd))
 
-        // Bedorven Chrome-cookies zijn erger dan geen cookies: YouTube wijst het
-        // verzoek dan af met "The page needs to be reloaded", terwijl dezelfde
-        // video anoniem gewoon op te halen is. Gemeten op 19-09-2026 — élke
-        // video faalde mét cookies en slaagde zonder, ook een willekeurige
-        // andere. Cookies blijven de eerste keus (nodig voor besloten of
-        // leeftijdsbeperkte video's), maar ze mogen niet de enige zijn.
+        // Niet de cookies zelf zijn het probleem — op 04-10-2026 bleek het
+        // Chrome-cookiebestand prima leesbaar en geldig. De echte oorzaak:
+        // YouTube's anti-bot "n-signature"-controle ("n challenge solving
+        // failed") faalt zodra er cookies worden meegestuurd, en yt-dlp meldt
+        // dat vervolgens als "The page needs to be reloaded" — dezelfde video
+        // anoniem ophalen slaagt gewoon. Cookies blijven de eerste keus (nodig
+        // voor besloten of leeftijdsbeperkte video's), maar ze mogen niet de
+        // enige zijn.
         if rc != 0, cookieFoutmelding(err) {
             if !cookiesGeweigerd {
-                log("Chrome cookies were rejected by YouTube — proceeding without cookies from now on.")
+                log("YouTube's bot-check failed with cookies attached — retrying without cookies.")
                 cookiesGeweigerd = true
             }
             (rc, out, err) = await runProcess(ytDlpPath, metaArgs(url: url, metCookies: false))
@@ -1334,10 +1360,10 @@ final class MonitorEngine: ObservableObject {
         lastCapturedFilePath[videoId] = nil
         var (rc, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
 
-        // Zelfde verhaal als bij het ophalen van de gegevens: wijst YouTube de
-        // cookies af, dan is het anoniem vaak gewoon op te halen.
+        // Zelfde verhaal als bij het ophalen van de gegevens: YouTube's
+        // bot-check faalt met cookies erbij, en anoniem lukt het gewoon.
         if rc != 0, cookieFoutmelding(err), !cookiesGeweigerd {
-            log("[\(label)] Cookies rejected — proceeding without cookies from now on.")
+            log("[\(label)] YouTube's bot-check failed with cookies attached — retrying without cookies.")
             cookiesGeweigerd = true
             let zonder = args.filter { $0 != "--cookies-from-browser" && $0 != browser?.ytdlpName }
             (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
