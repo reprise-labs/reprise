@@ -1763,9 +1763,15 @@ final class MonitorEngine: ObservableObject {
 
     /// Plain numeric dotted-version comparison ("1.10.0" > "1.9.0") — a string compare
     /// would wrongly say "1.9.0" is newer than "1.10.0".
+    ///
+    /// Strips an optional leading "v" first — every release before this one was
+    /// tagged "1.6.x", but v1.6.10/v1.6.11 (04-10-2026) accidentally used a "v"
+    /// prefix. Int("v1") is nil → 0, so "v1.6.11" silently parsed as "0.6.11"
+    /// and compared as *older* than 1.6.9, and neither Mac ever saw the update.
     private func isVersion(_ a: String, newerThan b: String) -> Bool {
-        let partsA = a.split(separator: ".").map { Int($0) ?? 0 }
-        let partsB = b.split(separator: ".").map { Int($0) ?? 0 }
+        let strip = { (s: String) in s.hasPrefix("v") || s.hasPrefix("V") ? String(s.dropFirst()) : s }
+        let partsA = strip(a).split(separator: ".").map { Int($0) ?? 0 }
+        let partsB = strip(b).split(separator: ".").map { Int($0) ?? 0 }
         for i in 0..<max(partsA.count, partsB.count) {
             let x = i < partsA.count ? partsA[i] : 0
             let y = i < partsB.count ? partsB[i] : 0
