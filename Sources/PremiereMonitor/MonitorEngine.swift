@@ -890,6 +890,7 @@ final class MonitorEngine: ObservableObject {
     }
 
     private var lastCapturedFilePath: [UUID: String] = [:]
+    private var lastCapturedFormatId: [UUID: String] = [:]
 
     /// ffmpeg's own stderr progress line (used via --hls-prefer-ffmpeg for live
     /// captures) looks like:
@@ -1116,6 +1117,8 @@ final class MonitorEngine: ObservableObject {
             } else {
                 downloadProgress[videoId] = "\(draaiend(videoId)) working…"
             }
+        } else if trimmed.hasPrefix("REPRISE_FORMAT:") {
+            lastCapturedFormatId[videoId] = String(trimmed.dropFirst("REPRISE_FORMAT:".count))
         } else if !trimmed.hasPrefix("[") && !trimmed.hasPrefix("ERROR") && !trimmed.hasPrefix("WARNING") {
             // This is presumably the --print after_move:filepath line.
             lastCapturedFilePath[videoId] = trimmed
@@ -1335,7 +1338,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID) async -> (ok: Bool, path: String?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID) async -> (ok: Bool, path: String?, formatId: String?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1373,6 +1376,10 @@ final class MonitorEngine: ObservableObject {
             // bestandsnamen met rare tekens terwijl het origineel prima kon.
             "--no-windows-filenames",
             "--print", "after_move:%(filepath)s",
+            // Tagged so processDownloadLine can tell this apart from the filepath
+            // print above — both are otherwise just a bare, unbracketed stdout
+            // line. Used to detect the "18" fallback (see heeftEchteMerge below).
+            "--print", "after_move:REPRISE_FORMAT:%(format_id)s",
             "-o", outTemplate
         ]
         if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
@@ -1396,6 +1403,7 @@ final class MonitorEngine: ObservableObject {
         log("[\(label)] Starting download (\(tag))")
         downloadProgress[videoId] = "0%"
         lastCapturedFilePath[videoId] = nil
+        lastCapturedFormatId[videoId] = nil
         var (rc, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
 
         // Zelfde verhaal als bij het ophalen van de gegevens: YouTube's
@@ -1408,22 +1416,30 @@ final class MonitorEngine: ObservableObject {
         }
         downloadProgress[videoId] = nil
         let capturedPath = lastCapturedFilePath[videoId]
+        let capturedFormatId = lastCapturedFormatId[videoId]
         lastCapturedFilePath[videoId] = nil
+        lastCapturedFormatId[videoId] = nil
 
         if rc == 0 {
             log("[\(label)] Download complete (\(tag)) → \(capturedPath ?? outTemplate)")
-            return (true, capturedPath)
+            return (true, capturedPath, capturedFormatId)
         }
 
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
         // er op schijf staat, dan pas iemand wakker maken.
         if let gered = reddenNaFout(url: url, tag: tag, label: label) {
             log("[\(label)] Done despite the error code (\(tag)) → \(gered)")
-            return (true, gered)
+            // Geen format_id beschikbaar hier — de --print after_move-regel vuurt
+            // alleen bij een schone afsluiting, en dit pad is juist voor een
+            // vuile. reddenNaFout() wordt alleen gebruikt als de losse sporen al
+            // samengevoegd zijn (of al een los, compleet bestand was), dus de
+            // "viel terug op het enkele noodformaat"-vraag is hier sowieso niet
+            // aan de orde zoals bij een schone, verse download.
+            return (true, gered, nil)
         }
 
         log("[\(label)] Download failed (\(tag), rc=\(rc)): \(tail(err, lines: 12))")
-        return (false, nil)
+        return (false, nil, nil)
     }
 
     /// Which videos already logged a "check window started" line (not persisted).
@@ -1592,7 +1608,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingLive
             writeBack(v, id: videoId)
-            let (ok, path) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id)
+            let (ok, path, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id)
             v.liveDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
@@ -1640,7 +1656,28 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
-            let (ok, path) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id)
+            let (ok, path, formatId) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id)
+            // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): heeftAdaptieveFormaten()
+            // above checks whether the *format list* mentions high-quality tracks,
+            // but that list can say yes before those tracks are actually fetchable
+            // yet — yt-dlp then quietly falls back to the single-stream noodformaat
+            // (itag 18) instead of erroring, so rc stayed 0 and this looked like a
+            // clean success. A real merge of separate video+audio always shows up
+            // as "id+id" (e.g. "137+251"); the noodformaat never has a "+". Caught
+            // here instead, after the fact, since there's no reliable way to tell
+            // in advance that a listed track won't actually be servable.
+            //
+            // The file is deleted rather than kept as a fallback: --no-overwrites
+            // means a next attempt would otherwise just see it sitting there and
+            // skip re-downloading forever, quietly keeping the noodformaat for
+            // good instead of trying again.
+            if ok, v.liveFinishedAt != nil, let formatId, !formatId.contains("+") {
+                log("[\(v.label)] VOD kwam binnen als noodformaat (\(formatId), geen losse hoge-kwaliteit-sporen) — weggegooid, probeer later opnieuw.")
+                if let path { try? FileManager.default.removeItem(atPath: path) }
+                v.status = .vodPending
+                writeBack(v, id: videoId)
+                return
+            }
             v.vodDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .done : .vodPending

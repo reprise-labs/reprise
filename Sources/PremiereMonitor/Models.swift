@@ -12,7 +12,7 @@ enum VideoStatus: String, Codable {
         switch self {
         case .waiting: return "Waiting"
         case .downloadingLive: return "Downloading LIVE"
-        case .vodPending: return "Waiting for VOD"
+        case .vodPending: return "Waiting for HD VOD"
         case .downloadingVod: return "Downloading VOD"
         case .done: return "Done"
         }
