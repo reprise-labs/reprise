@@ -1281,6 +1281,25 @@ final class MonitorEngine: ObservableObject {
         return nil
     }
 
+    /// Of YouTube al losse, hoge-kwaliteit beeld/geluid-sporen aanbiedt (de
+    /// "adaptive" formaten, bv. 1080p avc1 apart van de audio) in plaats van
+    /// alleen het samengevoegde noodformaat (meestal itag 18, 360p). Een
+    /// video-only spoor (acodec == "none") bestaat alleen onder de adaptieve
+    /// formaten — het noodformaat heeft altijd beeld én geluid in één stroom.
+    ///
+    /// Vervangt de eerdere aanpak van gewoon een vaste 3 minuten wachten: bij
+    /// Tiësto (10-10-2026) was die 3 minuten ruimschoots verstreken (4m43s) en
+    /// bood YouTube nog steeds alleen itag 18 aan — de VOD kreeg daardoor 360p
+    /// i.p.v. de 1080p die een paar minuten later gewoon beschikbaar bleek.
+    /// Een vaste wachttijd kan dus zowel te kort (dit geval) als nodeloos lang
+    /// (de meeste keren) zijn; hier wordt het echte signaal gebruikt in plaats
+    /// van een gok. Kost geen extra netwerkverzoek — `meta` is op het
+    /// aanroeppunt al opgehaald voor de fase-bepaling.
+    private func heeftAdaptieveFormaten(_ meta: [String: Any]?) -> Bool {
+        guard let formats = meta?["formats"] as? [[String: Any]] else { return false }
+        return formats.contains { ($0["acodec"] as? String) == "none" }
+    }
+
     /// One IOPM "no idle sleep" assertion shared across however many downloads are
     /// active at once, so an unattended Mac doesn't sleep mid-recording and silently
     /// cut a live capture short — reference-counted so it only releases once every
@@ -1600,6 +1619,24 @@ final class MonitorEngine: ObservableObject {
             if let finishedAt = v.liveFinishedAt, Date().timeIntervalSince(finishedAt) < vodFormatSettleDelay {
                 writeBack(v, id: videoId)
                 return
+            }
+            // The fixed delay above is a floor, not a guarantee — confirmed
+            // 10-10-2026 with Tiësto: 4m43s had passed (more than the 3-minute
+            // floor) and YouTube was still only offering itag 18 (360p,
+            // combined fallback), settling for that instead of the 1080p
+            // adaptive tracks that showed up a few minutes later. Checking the
+            // real signal (do separate high-quality tracks exist yet?) instead
+            // of just trusting a clock means this can wait longer when it
+            // genuinely needs to, instead of guessing a bigger fixed number
+            // that's still sometimes wrong.
+            if v.liveFinishedAt != nil, !heeftAdaptieveFormaten(meta) {
+                log("[\(v.label)] VOD is er, maar nog niet in volledige kwaliteit — nog even wachten.")
+                writeBack(v, id: videoId)
+                return
+            }
+            if v.vodNotified != true {
+                notify(title: "VOD download started", message: "\(v.label) — downloading the VOD now.")
+                v.vodNotified = true
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)

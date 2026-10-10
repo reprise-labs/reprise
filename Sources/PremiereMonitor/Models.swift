@@ -62,6 +62,11 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     /// for a short buffer afterward. Optional for the same decode-compatibility
     /// reason as liveNotified above.
     var liveFinishedAt: Date? = nil
+    /// Of de "VOD download gestart"-melding al verstuurd is — zonder dit vlaggetje
+    /// zou een mislukte VOD-poging bij elke hernieuwde poging opnieuw diezelfde
+    /// melding sturen, net als liveNotified hierboven voorkomt bij LIVE. Optioneel
+    /// om dezelfde decode-compatibiliteitsreden.
+    var vodNotified: Bool? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
 
