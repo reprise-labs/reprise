@@ -1405,6 +1405,7 @@ final class MonitorEngine: ObservableObject {
         lastCapturedFilePath[videoId] = nil
         lastCapturedFormatId[videoId] = nil
         var (rc, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
+        let gebruikteCookiesDezePoging = !cookiesGeweigerd && browser != nil
 
         // Zelfde verhaal als bij het ophalen van de gegevens: YouTube's
         // bot-check faalt met cookies erbij, en anoniem lukt het gewoon.
@@ -1412,7 +1413,42 @@ final class MonitorEngine: ObservableObject {
             log("[\(label)] YouTube's bot-check failed with cookies attached — retrying without cookies.")
             cookiesGeweigerd = true
             let zonder = args.filter { $0 != "--cookies-from-browser" && $0 != browser?.ytdlpName }
+            lastCapturedFilePath[videoId] = nil
+            lastCapturedFormatId[videoId] = nil
             (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+        } else if rc == 0, gebruikteCookiesDezePoging, let fmt = lastCapturedFormatId[videoId], !fmt.contains("+") {
+            // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): with cookies attached,
+            // the format selector deterministically resolved to the single-stream
+            // noodformaat (itag 18) three times in a row; anonymous resolved to
+            // the proper high-quality pair (137+251) three times in a row, same
+            // video, same selector, back to back. Not flakiness — the cookies
+            // themselves caused it, most likely a stored low-quality playback
+            // preference tied to the logged-in account that YouTube honors for
+            // authenticated requests but not anonymous ones. Retrying without
+            // cookies immediately (same shape as the bot-check fallback above)
+            // instead of discarding and passively hoping a future check happens
+            // to skip cookies on its own.
+            //
+            // Deliberately doesn't set cookiesGeweigerd here — cookies did work
+            // this time (no bot-check failure), they just gave a worse result for
+            // this one video; marking them refused app-wide would also block
+            // genuinely cookie-gated content for the rest of the session.
+            log("[\(label)] Cookies gaven het noodformaat (\(fmt)) — opnieuw proberen zonder cookies.")
+            // Het noodformaat-bestand van deze eerste poging bewaart een andere
+            // extensie dan de hoop-op-betere-poging zo meteen (mp4 voor het ene
+            // samengevoegde bestand, mkv zodra er echt twee sporen samengevoegd
+            // worden) — dus het wordt niet vanzelf overschreven. Zonder dit bleef
+            // het noodformaat-bestand na een geslaagde herpoging gewoon naast het
+            // goede bestand staan (bevestigd 10-10-2026, handmatig opgemerkt en
+            // opgeruimd bij Tiësto).
+            let noodformaatPad = lastCapturedFilePath[videoId]
+            let zonder = args.filter { $0 != "--cookies-from-browser" && $0 != browser?.ytdlpName }
+            lastCapturedFilePath[videoId] = nil
+            lastCapturedFormatId[videoId] = nil
+            (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+            if rc == 0, let noodformaatPad, noodformaatPad != lastCapturedFilePath[videoId] {
+                try? FileManager.default.removeItem(atPath: noodformaatPad)
+            }
         }
         downloadProgress[videoId] = nil
         let capturedPath = lastCapturedFilePath[videoId]
