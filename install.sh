@@ -1,0 +1,104 @@
+#!/bin/bash
+# Builds Reprise and installs it into /Applications, signed with the persistent
+# local "Encore Local Signing" certificate (created 26-09-2026 in the login
+# keychain, kept under its original name — it's an internal signing identity,
+# never user-visible, so renaming it would just mean redoing the one-time
+# keychain trust step for no real benefit) instead of an ad-hoc signature.
+# Ad-hoc signing hashes the binary's own content, so it changes on every
+# rebuild — macOS then treats each build as a different app and resets Full
+# Disk Access / Files and Folders grants. This certificate has a stable
+# identity (tied to its key, not the binary), so permission grants survive
+# rebuilds as long as this same identity keeps getting used. Falls back to
+# ad-hoc signing automatically on a machine that doesn't have this identity
+# yet — see the fallback below and the README.
+#
+# Also (re)creates Info.plist and the icon inside the bundle from Resources/
+# every run, not just the executable — so the whole bundle is reproducible
+# from source, not dependent on whatever happened to already exist on disk.
+set -e
+cd "$(dirname "$0")"
+
+IDENTITY="Encore Local Signing"
+APP="/Applications/Reprise.app"
+EXECUTABLE_NAME="Reprise"
+
+# --build-system native: the default "swiftbuild" engine (XCBuild-based, standard since
+# Swift 6) needs resources that only ship inside a full Xcode.app — on a Mac with just the
+# Command Line Tools (no Xcode installed) it fails outright with "Could not initialize
+# build system... Unknown error parsing property list". The native engine only needs the
+# Command Line Tools and works the same either way, so it's used unconditionally here
+# rather than trying to detect which one is needed. It's marked deprecated upstream but
+# still fully functional; harmless warning only.
+swift build -c release --build-system native
+
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+# Single source of truth for the version number: Resources/VERSION. Info.plist itself
+# stays hardcoded at "1.0" otherwise — found 27-09-2026 that it had silently drifted three
+# releases behind what GitHub actually had, because nothing kept them in sync. Bump
+# Resources/VERSION when cutting a release; this stamps it into the bundle every build.
+VERSION=$(cat Resources/VERSION)
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+
+if [ -f "$APP/Contents/MacOS/$EXECUTABLE_NAME" ]; then
+    TS=$(date +%Y%m%d-%H%M%S)
+    cp "$APP/Contents/MacOS/$EXECUTABLE_NAME" "$APP/Contents/MacOS/$EXECUTABLE_NAME.backup-$TS"
+fi
+cp .build/release/Reprise "$APP/Contents/MacOS/$EXECUTABLE_NAME"
+
+# Sparkle ships as an XCFramework via SPM, which (unlike Xcode) doesn't embed it into the
+# app bundle automatically — SwiftPM only links against it for building, so without this
+# step the executable would look for Sparkle.framework at runtime and not find it. Located
+# with `find` instead of a hardcoded path: it lives under a version-stamped SPM artifacts
+# folder (.build/artifacts/sparkle/...) that can shift between Sparkle releases.
+SPARKLE_FRAMEWORK=$(find .build/artifacts -type d -name "Sparkle.framework" -path "*macos*" | head -n 1)
+if [ -z "$SPARKLE_FRAMEWORK" ]; then
+    echo "Could not find Sparkle.framework under .build/artifacts — run 'swift package resolve' first."
+    exit 1
+fi
+mkdir -p "$APP/Contents/Frameworks"
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
+cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+# The executable links against "@rpath/Sparkle.framework/..." (see its LC_LOAD_DYLIB) but
+# carries no rpath pointing at Contents/Frameworks by default — only Xcode's build system
+# adds that automatically, SwiftPM doesn't. Must run before codesign below: changing the
+# binary after it's signed invalidates the signature.
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
+
+# Keep only the 2 most recent backups — same unbounded-growth issue as the
+# self-update's app-level backups (28-09-2026), just worse here since a local
+# dev rebuild does this every run. Sorted by the timestamp embedded in the
+# name (sort -r), not mtime (ls -t) — mtime turned out to not reliably match
+# creation order for these files.
+ls "$APP/Contents/MacOS/$EXECUTABLE_NAME".backup-* 2>/dev/null | sort -r | tail -n +3 | xargs rm -f
+
+# Falls back to ad-hoc signing on a machine that doesn't have this identity yet (e.g. a
+# fresh clone on another Mac) instead of hard-failing — codesign errors out entirely if
+# asked to sign with a name it can't find in any keychain. Ad-hoc still works, it just
+# means Full Disk Access needs re-granting after every rebuild until a persistent local
+# identity is set up there too (see README: "Keeping Full Disk Access across rebuilds").
+#
+# Deliberately checks presence (find-certificate), not "security find-identity -p
+# codesigning" — that filters to identities *trusted* for code signing, and this
+# self-signed cert (never explicitly marked "Always Trust") fails that filter even though
+# codesign has been signing with it directly, successfully, all along. Using
+# find-identity here made this check silently fall back to ad-hoc on 27-09-2026 despite
+# the real identity being right there and working — the whole point of this identity is
+# defeated if the fallback fires when it doesn't need to.
+if security find-certificate -c "$IDENTITY" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1; then
+    codesign --force --deep -s "$IDENTITY" "$APP"
+    echo "Installed and restarted Reprise, signed with '$IDENTITY'."
+else
+    codesign --force --deep -s - "$APP"
+    echo "Installed and restarted Reprise with an ad-hoc signature (no '$IDENTITY' identity"
+    echo "found in this Mac's keychain). This works, but macOS will ask you to re-grant Full"
+    echo "Disk Access after every rebuild until you set up a persistent signing identity —"
+    echo "see the README section \"Keeping Full Disk Access across rebuilds\"."
+fi
+
+pkill -x "$EXECUTABLE_NAME" 2>/dev/null || true
+sleep 2
+open -a "$APP"

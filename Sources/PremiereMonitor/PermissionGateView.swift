@@ -1,0 +1,133 @@
+import SwiftUI
+import AppKit
+
+/// Shown instead of the normal main window content whenever Reprise is missing a
+/// permission it needs — both the download folder (without it the app can't save
+/// anything) and browser cookie access (without it login-gated premieres silently
+/// fail) block on this screen now, one section per missing permission.
+struct PermissionGateView: View {
+    @ObservedObject private var engine = MonitorEngine.shared
+    @State private var justChecked = false
+
+    private struct Issue: Identifiable {
+        let id: String
+        let title: String
+        let message: String
+        let instructions: String
+        let actionLabel: String?
+        let actionIcon: String
+        let action: (() -> Void)?
+    }
+
+    private var issues: [Issue] {
+        var result: [Issue] = []
+        if engine.permissionWarnings["download-folder"] != nil {
+            result.append(Issue(
+                id: "download-folder",
+                title: "Download folder access",
+                message: "macOS is blocking Reprise from writing to its download folder — without this, "
+                    + "Reprise can't save anything it downloads.",
+                instructions: "Grant access in System Settings → Privacy & Security → Files and Folders → "
+                    + "Reprise → Downloads Folder, then check again below.",
+                actionLabel: "Open System Settings",
+                actionIcon: "gearshape",
+                action: {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_DownloadsFolder") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            ))
+        }
+        if let warning = engine.permissionWarnings["cookie-access"] {
+            // The stored warning text already names the specific browser (Chrome or
+            // Safari) MonitorEngine detected, so it's used directly here rather than
+            // re-deriving a hardcoded "Chrome" message that could be wrong on a Safari-only Mac.
+            result.append(Issue(
+                id: "cookie-access",
+                // Already self-contained (names the browser, the exact Settings path, and
+                // that public downloads still work) — no separate instructions needed here,
+                // unlike the download-folder issue above.
+                title: "Browser cookie access",
+                message: warning,
+                instructions: "",
+                actionLabel: "Open System Settings",
+                actionIcon: "gearshape",
+                action: {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            ))
+        }
+        if let warning = engine.permissionWarnings["external-tools"] {
+            result.append(Issue(
+                id: "external-tools",
+                title: "Missing yt-dlp / ffmpeg",
+                message: warning,
+                instructions: "",
+                actionLabel: "Install via Homebrew",
+                actionIcon: "terminal",
+                action: { engine.installMissingTools() }
+            ))
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lock.shield")
+                .font(.system(size: 40))
+                .foregroundStyle(.orange)
+
+            Text("Reprise needs permission")
+                .font(.title2).bold()
+
+            VStack(spacing: 18) {
+                ForEach(issues) { issue in
+                    VStack(spacing: 8) {
+                        Text(issue.title)
+                            .font(.headline)
+                        Text(issue.message + " " + issue.instructions)
+                            .font(.callout)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 380)
+                        if let action = issue.action, let label = issue.actionLabel {
+                            Button {
+                                action()
+                            } label: {
+                                Label(label, systemImage: issue.actionIcon)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+
+            if justChecked {
+                Text("Still blocked — grant access above, then try again.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button {
+                engine.recheckPermissions()
+                justChecked = true
+            } label: {
+                Label("Check again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
+
+            Button("Quit Reprise") {
+                StatusItemController.shared?.quit()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
