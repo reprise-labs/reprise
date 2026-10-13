@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>Reprise</title>
+        <description>Reprise release updates.</description>
+        <language>en</language>
+        <item>
+            <title>Version 1.6.32</title>
+            <sparkle:version>1.6.32</sparkle:version>
+            <sparkle:shortVersionString>1.6.32</sparkle:shortVersionString>
+            <description><![CDATA[No functional changes — just a version bump so you can personally test the Sparkle update flow end to end.]]></description>
+            <pubDate>Tue, 13 Oct 2026 07:44:17 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.32/Reprise.zip" length="4005573" type="application/octet-stream" sparkle:edSignature="XY8BdSNOwtAhBW1IVznfyve4X/8YVMRY3Tr/iVPJc5R3b77lNPc1YsI1hMgmOjtMniGwtOrzGhUJVFUsEtKOAA==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>Version 1.6.31</title>
+            <sparkle:version>1.6.31</sparkle:version>
+            <sparkle:shortVersionString>1.6.31</sparkle:shortVersionString>
+            <description><![CDATA[Fixed a bug where Sparkle's own update dialog could get silently closed if you reopened the main Reprise window while an update was sitting at Ready to Install — discarding an already-downloaded update with no warning. Also: the Upcoming tab label no longer wraps onto two lines when its notification badge appears.]]></description>
+            <pubDate>Tue, 13 Oct 2026 07:39:55 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.31/Reprise.zip" length="3556242" type="application/octet-stream" sparkle:edSignature="H2Cw66OAsK7S4WOKl4mG9g1mE6528Q2I1c6PpHOI/U7FhB9C75uUZBPI7YrVuEpq2QUlI8Wq1pqyX6lD5LuxDA==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>Version 1.6.26</title>
+            <sparkle:version>1.6.26</sparkle:version>
+            <sparkle:shortVersionString>1.6.26</sparkle:shortVersionString>
+            <description><![CDATA[Small fix: the Upcoming tab label could wrap onto two lines when its notification badge appeared.]]></description>
+            <pubDate>Sun, 11 Oct 2026 16:48:52 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.26/Reprise.zip" length="3105863" type="application/octet-stream" sparkle:edSignature="kYj9pXGTG7KPG0H4IOWN3H7eBC6TRN9gQFF2ivdxMBg9a/VsVcfi0GQ4t6UJbF6Rav5MvUa0nDwjalTxMRfUDQ==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>Version 1.6.25</title>
+            <sparkle:version>1.6.25</sparkle:version>
+            <sparkle:shortVersionString>1.6.25</sparkle:shortVersionString>
+            <description><![CDATA[Reprise now checks for updates automatically (via Sparkle) instead of needing a manual check in Settings. A dialog appears on its own when a new version is out, with release notes and Skip/Remind Later/Install choices.]]></description>
+            <pubDate>Sun, 11 Oct 2026 15:14:45 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.25/Reprise.zip" length="4049105" type="application/octet-stream" sparkle:edSignature="sTJEtekJrnFsWLA3zJn5BVLAUbt1kluufyi+69ZAe2ssq3ruvAqOV9VcYKNpKyx7NdkQpPttsNWCVM4qgYCwBg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+    </channel>
+</rss>
