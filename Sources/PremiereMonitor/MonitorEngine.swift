@@ -482,12 +482,23 @@ final class MonitorEngine: ObservableObject {
     /// in there again — the only real fix for rejected cookies, since yt-dlp reads them
     /// from that browser's own profile, so a valid login needs to live there.
     func openYouTubeLogin() {
-        let chrome = URL(fileURLWithPath: "/Applications/Google Chrome.app")
         let youtube = URL(string: "https://www.youtube.com/account")!
-        if FileManager.default.fileExists(atPath: chrome.path) {
+        // Was hardcoded to Chrome whenever Chrome.app existed at all, regardless of
+        // Settings' cookie-browser choice — so with "Safari" explicitly selected (and
+        // Chrome merely also installed), this still logged you into Chrome, which
+        // yt-dlp was never reading from. Found 15-10-2026: the fix is just routing
+        // through the same cookieBrowser (preference-aware) property every actual
+        // cookie-reading call already uses, instead of re-deriving the choice here.
+        let appPath: String?
+        switch cookieBrowser {
+        case .chrome: appPath = "/Applications/Google Chrome.app"
+        case .safari: appPath = "/Applications/Safari.app"
+        case nil: appPath = nil
+        }
+        if let appPath, FileManager.default.fileExists(atPath: appPath) {
             let config = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.open([youtube], withApplicationAt: chrome, configuration: config)
-            log("Opened Chrome on YouTube — log in there, then run the cookie test again.")
+            NSWorkspace.shared.open([youtube], withApplicationAt: URL(fileURLWithPath: appPath), configuration: config)
+            log("Opened \(cookieBrowser!.displayName) on YouTube — log in there, then run the cookie test again.")
         } else {
             NSWorkspace.shared.open(youtube)
             let browserName = cookieBrowser?.displayName ?? "your browser"
