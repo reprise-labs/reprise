@@ -405,6 +405,13 @@ struct VideoRow: View {
                 Text(video.scheduledDate.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                // Only shown for the non-default choice — the common case (Best) needs
+                // no extra label, same reasoning as the vega/side-dish badges elsewhere.
+                if video.quality == .saveSpace {
+                    Text("Smaller file (max 720p)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
                 if video.status == .waiting {
                     // SwiftUI's built-in relative style ticks down on its own — no timer needed.
                     Text("in \(video.scheduledDate, style: .relative)")

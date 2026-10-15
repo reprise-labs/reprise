@@ -507,14 +507,14 @@ final class MonitorEngine: ObservableObject {
 
     /// Adds a premiere. Returns false (and adds nothing) if the URL is already in the list.
     @discardableResult
-    func addVideo(url: String, label: String, scheduledDate: Date) -> Bool {
+    func addVideo(url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best) -> Bool {
         let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if videos.contains(where: { $0.url.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedUrl }) {
             log("Not added (already in the list): \(trimmedUrl)")
             return false
         }
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        let v = MonitoredVideo(url: trimmedUrl, label: trimmedLabel.isEmpty ? trimmedUrl : trimmedLabel, scheduledDate: scheduledDate)
+        let v = MonitoredVideo(url: trimmedUrl, label: trimmedLabel.isEmpty ? trimmedUrl : trimmedLabel, scheduledDate: scheduledDate, quality: quality)
         videos.append(v)
         Store.save(videos)
         log("Added: \(v.label)")
@@ -674,7 +674,7 @@ final class MonitorEngine: ObservableObject {
     /// Updates an existing premiere's URL/label/scheduled time. Returns false (and changes
     /// nothing) if the new URL matches a *different* premiere already in the list.
     @discardableResult
-    func updateVideo(id: UUID, url: String, label: String, scheduledDate: Date) -> Bool {
+    func updateVideo(id: UUID, url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best) -> Bool {
         guard let index = videos.firstIndex(where: { $0.id == id }) else { return false }
         let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if videos.contains(where: { $0.id != id && $0.url.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedUrl }) {
@@ -683,6 +683,7 @@ final class MonitorEngine: ObservableObject {
         }
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         var v = videos[index]
+        v.quality = quality
 
         // Without these resets: (1) editing a "Done" premiere's URL to point at a different
         // video left it stuck showing "Done" forever — checkOneVideo's very first line
@@ -1354,7 +1355,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID) async -> (ok: Bool, path: String?, formatId: String?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality) async -> (ok: Bool, path: String?, formatId: String?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1370,7 +1371,7 @@ final class MonitorEngine: ObservableObject {
         var args = [
             "--force-ipv4",
             "-S", "codec:h264,res",
-            "-f", "bv*[vcodec^=avc1]+ba/b",
+            "-f", quality.formatSelector,
             "--merge-output-format", "mkv",
             "--no-warnings",
             "--no-overwrites",
@@ -1686,7 +1687,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingLive
             writeBack(v, id: videoId)
-            let (ok, path, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id)
+            let (ok, path, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best)
             v.liveDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
@@ -1734,7 +1735,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
-            let (ok, path, formatId) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id)
+            let (ok, path, formatId) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best)
             // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): heeftAdaptieveFormaten()
             // above checks whether the *format list* mentions high-quality tracks,
             // but that list can say yes before those tracks are actually fetchable
