@@ -6,14 +6,21 @@ import Foundation
 /// reason as the flags below — existing saved premieres without this field
 /// just fall back to .best, today's only behavior.
 ///
-/// Resolved entirely at download time via live yt-dlp -f/-S flags rather than
+/// Resolved entirely at download time via a live yt-dlp -f filter rather than
 /// anything looked up and stored in advance: a premiere is typically added
 /// days before it airs, when yt-dlp has no real format list for it yet (it
 /// doesn't exist until the stream starts) — so there's nothing meaningful to
 /// pre-resolve at add-time anyway. .premium in particular never needs a
-/// stored format_id: its -S sort just prefers the higher-bitrate avc1 track
-/// *if* one exists at download time, and is a no-op otherwise, so it quietly
-/// degrades to exactly .best's result on any video without a Premium variant.
+/// stored format_id: its filter just looks for YouTube's own "Premium"
+/// format_note tag at download time and is a no-op when nothing matches, so
+/// it quietly degrades to exactly .best's result on any video without one.
+///
+/// Confirmed 15-10-2026 against a real Premium account/video: YouTube labels
+/// the enhanced-bitrate track's format_note literally as e.g. "1080p Premium"
+/// — and, on that video, only as vp9/av01, not avc1/h264 at all. So unlike
+/// .best/the resolution caps below (which stay pinned to avc1 for playback
+/// compatibility), .premium's filter intentionally doesn't codec-restrict —
+/// requiring avc1 would have silently filtered the real Premium track away.
 enum VideoQuality: String, Codable, CaseIterable, Identifiable {
     case premium = "Premium"
     case best = "Best"
@@ -45,18 +52,13 @@ enum VideoQuality: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// yt-dlp -f filter.
+    /// yt-dlp -f filter. .premium tries a Premium-tagged track first (any
+    /// codec — see above), then falls through to the exact same avc1-best
+    /// selector as .best whenever nothing matches.
     var formatFilter: String {
-        if let heightCap { return "bv*[vcodec^=avc1][height<=\(heightCap)]+ba/b" }
-        return "bv*[vcodec^=avc1]+ba/b"
-    }
-
-    /// Appended to the existing "-S codec:h264,res" sort. Only .premium adds
-    /// anything: preferring higher bitrate (tbr) among same-resolution avc1
-    /// tracks is exactly what surfaces YouTube Premium's enhanced-bitrate
-    /// encode when it exists, and changes nothing when it doesn't.
-    var sortSuffix: String {
-        self == .premium ? ",tbr" : ""
+        let avc1Best = heightCap.map { "bv*[vcodec^=avc1][height<=\($0)]+ba/b" } ?? "bv*[vcodec^=avc1]+ba/b"
+        guard self == .premium else { return avc1Best }
+        return "bv*[format_note*=Premium]+ba/" + avc1Best
     }
 }
 

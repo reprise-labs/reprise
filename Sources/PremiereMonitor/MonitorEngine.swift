@@ -1190,28 +1190,16 @@ final class MonitorEngine: ObservableObject {
         return VideoLookupResult(title: title, scheduledDate: scheduledDate, isLiveNow: isLive, errorMessage: errorMessage)
     }
 
-    /// Looks for YouTube Premium's higher-bitrate h264 variant in an already-fetched
-    /// format list: a second avc1 video-only track at the same (top) resolution as the
-    /// normal best, with a meaningfully higher bitrate. yt-dlp doesn't label these with
-    /// a dedicated field, so this is a margin-based heuristic (30% higher tbr than the
-    /// next-best track at that resolution) rather than an exact match — added
-    /// 15-10-2026 without a Premium account available to verify the real format list
-    /// against, so the margin may need adjusting once that's possible. Only ever used
-    /// to flip settings.youtubePremiumConfirmed on — the actual download-time quality
-    /// selection doesn't need this at all (see VideoQuality.sortSuffix).
+    /// Looks for YouTube Premium's enhanced-bitrate track in an already-fetched format
+    /// list. Confirmed 15-10-2026 against a real Premium account: YouTube labels it with
+    /// a literal "Premium" in format_note (e.g. "1080p Premium") — an exact signal, not
+    /// a guess — and on that video it only existed as vp9/av01, not avc1/h264, which is
+    /// why this (and VideoQuality.premium's filter) doesn't codec-restrict.
     private func hasPremiumFormat(meta: [String: Any]) -> Bool {
         guard let formats = meta["formats"] as? [[String: Any]] else { return false }
-        struct Track { let height: Int; let tbr: Double }
-        let h264VideoOnly: [Track] = formats.compactMap { f in
-            guard let vcodec = f["vcodec"] as? String, vcodec.hasPrefix("avc1"),
-                  (f["acodec"] as? String) == "none",
-                  let height = f["height"] as? Int else { return nil }
-            let tbr = (f["tbr"] as? Double) ?? (f["tbr"] as? Int).map(Double.init) ?? 0
-            return Track(height: height, tbr: tbr)
+        return formats.contains { f in
+            (f["format_note"] as? String)?.localizedCaseInsensitiveContains("Premium") == true
         }
-        guard let topHeight = h264VideoOnly.map(\.height).max() else { return false }
-        let atTopHeight = h264VideoOnly.filter { $0.height == topHeight }.sorted { $0.tbr > $1.tbr }
-        return atTopHeight.count >= 2 && atTopHeight[0].tbr > atTopHeight[1].tbr * 1.3
     }
 
     // MARK: - yt-dlp logic (ported from the Python script)
@@ -1401,7 +1389,7 @@ final class MonitorEngine: ObservableObject {
             "%(upload_date>%Y-%m-%d)s — %(title)s [\(tag)] (%(id)s).%(ext)s").path
         var args = [
             "--force-ipv4",
-            "-S", "codec:h264,res" + quality.sortSuffix,
+            "-S", "codec:h264,res",
             "-f", quality.formatFilter,
             "--merge-output-format", "mkv",
             "--no-warnings",
