@@ -81,14 +81,15 @@ struct AddVideoView: View {
                 Text("Quality")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // YouTube-style quality menu. Premium* only appears at all once
-                // it's been confirmed (on any video, not necessarily this one) —
-                // before that there's nothing to offer, so it's left out rather
-                // than shown disabled. See VideoQuality and
-                // AppSettings.youtubePremiumConfirmed for why this can't reliably
-                // be narrowed down to "available for this exact video": a
-                // premiere is normally added days before it airs, when YouTube
-                // doesn't have a format list for it yet at all.
+                // YouTube-style quality menu, same label/position as YouTube's own
+                // (verified 15-10-2026): "1080p Premium" above plain "1080p" — not
+                // a standalone "Premium" entry. Only appears at all once it's been
+                // confirmed (on any video, not necessarily this one) — before that
+                // there's nothing to offer, so it's left out rather than shown
+                // disabled. See VideoQuality and AppSettings.youtubePremiumConfirmed
+                // for why this can't reliably be narrowed down to "available for
+                // this exact video": a premiere is normally added days before it
+                // airs, when YouTube doesn't have a format list for it yet at all.
                 Picker("", selection: $quality) {
                     if engine.settings.youtubePremiumConfirmed == true {
                         Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
@@ -102,7 +103,7 @@ struct AddVideoView: View {
                 .frame(width: 180)
 
                 if quality == .premium {
-                    Text("* only if YouTube offers this video in Premium's enhanced bitrate — otherwise downloads as Best available.")
+                    Text("Only downloads at this bitrate if YouTube offers it for this video — otherwise falls back to Best available.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 360, alignment: .leading)

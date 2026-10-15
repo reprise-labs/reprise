@@ -1,7 +1,16 @@
 import Foundation
 
 /// Download quality, chosen per premiere at add/edit time from a YouTube-style
-/// dropdown (Premium* at top when ever confirmed, then Best/resolution caps).
+/// dropdown (1080p Premium at top when ever confirmed, then Best/resolution
+/// caps) — labeled and ordered to match YouTube's own quality menu, verified
+/// 15-10-2026 directly against a real Premium account: YouTube writes it as
+/// "1080p Premium" (no asterisk, tied to the resolution it enhances, not a
+/// standalone "Premium") with a one-line explanation underneath, positioned
+/// above plain "1080p". AddVideoView mirrors the label/position; the inline
+/// per-item subtitle itself is AppKit-only (NSMenuItem.subtitle, macOS
+/// 14.4+) and deliberately skipped here to avoid a compatibility gap on
+/// anything older — a plain caption below the picker carries the same
+/// explanation instead.
 /// Optional on MonitoredVideo (nil-default) for the same decode-compatibility
 /// reason as the flags below — existing saved premieres without this field
 /// just fall back to .best, today's only behavior.
@@ -33,7 +42,7 @@ enum VideoQuality: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .premium: return "Premium*"
+        case .premium: return "1080p Premium"
         case .best: return "Best available"
         case .p1080: return "1080p"
         case .p720: return "720p"

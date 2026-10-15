@@ -908,6 +908,7 @@ final class MonitorEngine: ObservableObject {
 
     private var lastCapturedFilePath: [UUID: String] = [:]
     private var lastCapturedFormatId: [UUID: String] = [:]
+    private var lastCapturedFormatNote: [UUID: String] = [:]
 
     /// ffmpeg's own stderr progress line (used via --hls-prefer-ffmpeg for live
     /// captures) looks like:
@@ -1136,6 +1137,8 @@ final class MonitorEngine: ObservableObject {
             }
         } else if trimmed.hasPrefix("REPRISE_FORMAT:") {
             lastCapturedFormatId[videoId] = String(trimmed.dropFirst("REPRISE_FORMAT:".count))
+        } else if trimmed.hasPrefix("REPRISE_NOTE:") {
+            lastCapturedFormatNote[videoId] = String(trimmed.dropFirst("REPRISE_NOTE:".count))
         } else if !trimmed.hasPrefix("[") && !trimmed.hasPrefix("ERROR") && !trimmed.hasPrefix("WARNING") {
             // This is presumably the --print after_move:filepath line.
             lastCapturedFilePath[videoId] = trimmed
@@ -1374,7 +1377,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality) async -> (ok: Bool, path: String?, formatId: String?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1416,6 +1419,12 @@ final class MonitorEngine: ObservableObject {
             // print above — both are otherwise just a bare, unbracketed stdout
             // line. Used to detect the "18" fallback (see heeftEchteMerge below).
             "--print", "after_move:REPRISE_FORMAT:%(format_id)s",
+            // Human-readable counterpart to REPRISE_FORMAT above (e.g. "137" means
+            // nothing to a human in a push notification; "1080p" or "1080p Premium"
+            // does). For a merged video+audio pair yt-dlp joins both tracks' notes
+            // with a "+" (e.g. "1080p Premium+medium") — only the part before that
+            // is shown, see qualityLabel(fromFormatNote:).
+            "--print", "after_move:REPRISE_NOTE:%(format_note)s",
             "-o", outTemplate
         ]
         if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
@@ -1440,6 +1449,7 @@ final class MonitorEngine: ObservableObject {
         downloadProgress[videoId] = "0%"
         lastCapturedFilePath[videoId] = nil
         lastCapturedFormatId[videoId] = nil
+        lastCapturedFormatNote[videoId] = nil
         var (rc, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
         let gebruikteCookiesDezePoging = !cookiesGeweigerd && browser != nil
 
@@ -1451,6 +1461,7 @@ final class MonitorEngine: ObservableObject {
             let zonder = args.filter { $0 != "--cookies-from-browser" && $0 != browser?.ytdlpName }
             lastCapturedFilePath[videoId] = nil
             lastCapturedFormatId[videoId] = nil
+            lastCapturedFormatNote[videoId] = nil
             (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
         } else if rc == 0, !isLive, gebruikteCookiesDezePoging, let fmt = lastCapturedFormatId[videoId], !fmt.contains("+") {
             // !isLive: a live capture only returns once the stream has already
@@ -1493,6 +1504,7 @@ final class MonitorEngine: ObservableObject {
             let zonder = args.filter { $0 != "--cookies-from-browser" && $0 != browser?.ytdlpName }
             lastCapturedFilePath[videoId] = nil
             lastCapturedFormatId[videoId] = nil
+            lastCapturedFormatNote[videoId] = nil
             (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
             if rc == 0, let noodformaatPad, noodformaatPad != lastCapturedFilePath[videoId] {
                 try? FileManager.default.removeItem(atPath: noodformaatPad)
@@ -1501,12 +1513,14 @@ final class MonitorEngine: ObservableObject {
         downloadProgress[videoId] = nil
         let capturedPath = lastCapturedFilePath[videoId]
         let capturedFormatId = lastCapturedFormatId[videoId]
+        let capturedQualityLabel = qualityLabel(fromFormatNote: lastCapturedFormatNote[videoId])
         lastCapturedFilePath[videoId] = nil
         lastCapturedFormatId[videoId] = nil
+        lastCapturedFormatNote[videoId] = nil
 
         if rc == 0 {
-            log("[\(label)] Download complete (\(tag)) → \(capturedPath ?? outTemplate)")
-            return (true, capturedPath, capturedFormatId)
+            log("[\(label)] Download complete (\(tag)) → \(capturedPath ?? outTemplate)\(capturedQualityLabel.map { " [\($0)]" } ?? "")")
+            return (true, capturedPath, capturedFormatId, capturedQualityLabel)
         }
 
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
@@ -1519,11 +1533,20 @@ final class MonitorEngine: ObservableObject {
             // samengevoegd zijn (of al een los, compleet bestand was), dus de
             // "viel terug op het enkele noodformaat"-vraag is hier sowieso niet
             // aan de orde zoals bij een schone, verse download.
-            return (true, gered, nil)
+            return (true, gered, nil, nil)
         }
 
         log("[\(label)] Download failed (\(tag), rc=\(rc)): \(tail(err, lines: 12))")
-        return (false, nil, nil)
+        return (false, nil, nil, nil)
+    }
+
+    /// Turns yt-dlp's raw %(format_note)s (e.g. "1080p Premium+medium" for a
+    /// merged video+audio pair) into just the human-readable video-quality part
+    /// ("1080p Premium") for push notifications — the audio note after the "+"
+    /// isn't something a user needs to see.
+    private func qualityLabel(fromFormatNote note: String?) -> String? {
+        guard let note, !note.isEmpty else { return nil }
+        return note.split(separator: "+", maxSplits: 1).first.map(String.init)
     }
 
     /// Which videos already logged a "check window started" line (not persisted).
@@ -1712,7 +1735,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingLive
             writeBack(v, id: videoId)
-            let (ok, path, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best)
+            let (ok, path, _, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best)
             v.liveDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
@@ -1760,7 +1783,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
-            let (ok, path, formatId) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best)
+            let (ok, path, formatId, qualityLabel) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best)
             // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): heeftAdaptieveFormaten()
             // above checks whether the *format list* mentions high-quality tracks,
             // but that list can say yes before those tracks are actually fetchable
@@ -1792,10 +1815,15 @@ final class MonitorEngine: ObservableObject {
                 // check landed), in which case liveDone is still false here. Claiming "both
                 // LIVE and VOD" in that second case is just wrong; said exactly that on
                 // 26-09-2026 for a recording where the live capture never ran at all.
+                // qualityLabel comes straight from yt-dlp's own format_note on the file
+                // that actually landed (see qualityLabel(fromFormatNote:)) — not from
+                // what quality was *requested* — so a Premium pick that silently fell
+                // back to Best available is reflected honestly here, not overclaimed.
+                let kwaliteit = qualityLabel.map { " [\($0)]" } ?? ""
                 if v.liveDone {
-                    notify(title: "Premiere captured!", message: "\(v.label) — both LIVE and VOD have been downloaded.")
+                    notify(title: "Premiere captured!", message: "\(v.label) — both LIVE and VOD have been downloaded\(kwaliteit).")
                 } else {
-                    notify(title: "VOD downloaded", message: "\(v.label) — VOD saved. The live broadcast wasn't "
+                    notify(title: "VOD downloaded", message: "\(v.label) — VOD saved\(kwaliteit). The live broadcast wasn't "
                         + "captured separately (the live window was likely missed).")
                 }
             } else {
