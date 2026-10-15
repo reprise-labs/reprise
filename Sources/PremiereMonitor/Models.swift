@@ -64,10 +64,22 @@ enum VideoQuality: String, Codable, CaseIterable, Identifiable {
     /// yt-dlp -f filter. .premium tries a Premium-tagged track first (any
     /// codec — see above), then falls through to the exact same avc1-best
     /// selector as .best whenever nothing matches.
+    ///
+    /// "bv" here, not "bv*": the asterisk relaxes yt-dlp's video-only
+    /// requirement, letting it also consider pre-combined formats (itag 18,
+    /// a single 360p stream with audio baked in) as a "video" candidate.
+    /// Verified 15-10-2026: combined with this app's own "-S codec:h264,res"
+    /// sort override, that let itag 18 outrank the real 1080p/720p video-only
+    /// track and silently resolve to 360p instead — reproduced 3/3 with
+    /// "bv*", fixed 3/3 by switching to plain "bv", independent of cookies
+    /// (so the existing cookie-retry fallback elsewhere never would have
+    /// caught this). Initially misdiagnosed as a YouTube-side "SABR
+    /// streaming experiment" warning seen in passing during the same
+    /// investigation — that warning was real but unrelated to this.
     var formatFilter: String {
-        let avc1Best = heightCap.map { "bv*[vcodec^=avc1][height<=\($0)]+ba/b" } ?? "bv*[vcodec^=avc1]+ba/b"
+        let avc1Best = heightCap.map { "bv[vcodec^=avc1][height<=\($0)]+ba/b" } ?? "bv[vcodec^=avc1]+ba/b"
         guard self == .premium else { return avc1Best }
-        return "bv*[format_note*=Premium]+ba/" + avc1Best
+        return "bv[format_note*=Premium]+ba/" + avc1Best
     }
 }
 
