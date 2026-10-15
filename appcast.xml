@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.37</title>
+            <sparkle:version>1.6.37</sparkle:version>
+            <sparkle:shortVersionString>1.6.37</sparkle:shortVersionString>
+            <description><![CDATA[Fixed a bug that could silently cut download quality to 360p: a custom sort setting combined with a loosely-scoped format selector sometimes let the low-quality single-stream fallback outrank the real 1080p/720p track, independent of the quality you picked. Verified fixed end-to-end.]]></description>
+            <pubDate>Thu, 15 Oct 2026 21:20:31 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.37/Reprise.zip" length="4044048" type="application/octet-stream" sparkle:edSignature="nQM0jC90iecvaOK4wh7vZZsO4PQUP7EjHs8+3cNf1jC8m65yy25y1hH18R8FqQvxXEXJYdG3q34R1PW8XX6cAA==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.36</title>
             <sparkle:version>1.6.36</sparkle:version>
             <sparkle:shortVersionString>1.6.36</sparkle:shortVersionString>
