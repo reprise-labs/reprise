@@ -619,12 +619,20 @@ final class MonitorEngine: ObservableObject {
     private func checkOneChannel(index: Int) async {
         let channel = channels[index]
         let base = channel.url.hasSuffix("/") ? String(channel.url.dropLast()) : channel.url
-        let streamsUrl = base + "/streams"
-        let (_, out, err) = await runProcess(ytDlpPath, ["--flat-playlist", "-J", streamsUrl])
+        // /videos, not /streams: found 15-10-2026 (user report — a real upcoming premiere,
+        // visible and clearly marked "Gepland" in the YouTube app, was silently missed).
+        // YouTube only shows a channel's /streams tab when there's actively live or very
+        // recently live content — a premiere that's merely scheduled, with nothing live
+        // yet, can leave a channel with no streams tab at all, which yt-dlp then reports as
+        // "does not have a streams tab" (a case this function already treated as benign).
+        // /videos always exists and lists every upload including scheduled premieres with
+        // live_status "is_upcoming" — confirmed directly against this exact channel/video.
+        let videosUrl = base + "/videos"
+        let (_, out, err) = await runProcess(ytDlpPath, ["--flat-playlist", "-J", videosUrl])
 
         guard let data = out.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            if !err.contains("does not have a streams tab") {
+            if !err.contains("does not have a videos tab") {
                 log("⚠️ Could not check channel \(channel.name ?? channel.url): \(tail(err))")
             } else {
                 channels[index].lastChecked = Date()
