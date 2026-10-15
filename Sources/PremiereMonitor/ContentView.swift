@@ -407,8 +407,8 @@ struct VideoRow: View {
                     .foregroundStyle(.secondary)
                 // Only shown for the non-default choice — the common case (Best) needs
                 // no extra label, same reasoning as the vega/side-dish badges elsewhere.
-                if video.quality == .saveSpace {
-                    Text("Smaller file (max 720p)")
+                if let quality = video.quality, quality != .best {
+                    Text(quality.displayName)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

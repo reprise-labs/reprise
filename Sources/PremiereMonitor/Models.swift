@@ -1,30 +1,62 @@
 import Foundation
 
-/// Download quality, chosen per premiere at add/edit time. Optional on
-/// MonitoredVideo (nil-default) for the same decode-compatibility reason as
-/// the flags below — existing saved premieres without this field just fall
-/// back to .best, today's only behavior.
+/// Download quality, chosen per premiere at add/edit time from a YouTube-style
+/// dropdown (Premium* at top when ever confirmed, then Best/resolution caps).
+/// Optional on MonitoredVideo (nil-default) for the same decode-compatibility
+/// reason as the flags below — existing saved premieres without this field
+/// just fall back to .best, today's only behavior.
+///
+/// Resolved entirely at download time via live yt-dlp -f/-S flags rather than
+/// anything looked up and stored in advance: a premiere is typically added
+/// days before it airs, when yt-dlp has no real format list for it yet (it
+/// doesn't exist until the stream starts) — so there's nothing meaningful to
+/// pre-resolve at add-time anyway. .premium in particular never needs a
+/// stored format_id: its -S sort just prefers the higher-bitrate avc1 track
+/// *if* one exists at download time, and is a no-op otherwise, so it quietly
+/// degrades to exactly .best's result on any video without a Premium variant.
 enum VideoQuality: String, Codable, CaseIterable, Identifiable {
+    case premium = "Premium"
     case best = "Best"
-    case saveSpace = "SaveSpace"
+    case p1080 = "P1080"
+    case p720 = "P720"
+    case p480 = "P480"
+    case p360 = "P360"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
+        case .premium: return "Premium*"
         case .best: return "Best available"
-        case .saveSpace: return "Smaller file (max 720p)"
+        case .p1080: return "1080p"
+        case .p720: return "720p"
+        case .p480: return "480p"
+        case .p360: return "360p"
         }
     }
 
-    /// yt-dlp format selector. .saveSpace caps the height so the sort (-S
-    /// codec:h264,res) still picks the best h264 track within that cap,
-    /// instead of always resolving to the full adaptive quality.
-    var formatSelector: String {
+    private var heightCap: Int? {
         switch self {
-        case .best: return "bv*[vcodec^=avc1]+ba/b"
-        case .saveSpace: return "bv*[vcodec^=avc1][height<=720]+ba/b"
+        case .p1080: return 1080
+        case .p720: return 720
+        case .p480: return 480
+        case .p360: return 360
+        case .best, .premium: return nil
         }
+    }
+
+    /// yt-dlp -f filter.
+    var formatFilter: String {
+        if let heightCap { return "bv*[vcodec^=avc1][height<=\(heightCap)]+ba/b" }
+        return "bv*[vcodec^=avc1]+ba/b"
+    }
+
+    /// Appended to the existing "-S codec:h264,res" sort. Only .premium adds
+    /// anything: preferring higher bitrate (tbr) among same-resolution avc1
+    /// tracks is exactly what surfaces YouTube Premium's enhanced-bitrate
+    /// encode when it exists, and changes nothing when it doesn't.
+    var sortSuffix: String {
+        self == .premium ? ",tbr" : ""
     }
 }
 
@@ -197,4 +229,14 @@ struct AppSettings: Codable, Equatable {
     /// auto-detection prefers Chrome unconditionally, which is wrong if you're actually
     /// logged into YouTube in Safari.
     var cookieBrowserPreference: String? = nil
+    /// Set to true the first time any video's real format list (checked either
+    /// at Look Up or, more often, once a premiere actually goes live/VOD —
+    /// see MonitorEngine.hasPremiumFormat) shows YouTube Premium's higher-
+    /// bitrate format via the current cookies. Never reset back to false
+    /// automatically — there's no reliable negative signal, since "not found
+    /// on this video" just as often means this particular video, not a lack
+    /// of Premium. Drives whether AddVideoView's quality dropdown offers
+    /// "Premium*" at all; once offered it stays offered, since by then every
+    /// other video is just as plausible a candidate as the one that proved it.
+    var youtubePremiumConfirmed: Bool? = nil
 }

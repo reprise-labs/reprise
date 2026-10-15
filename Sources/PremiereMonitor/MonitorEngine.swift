@@ -1180,7 +1180,38 @@ final class MonitorEngine: ObservableObject {
             errorMessage = "No scheduled premiere time found — enter it manually."
         }
 
+        // Usually a no-op here: a premiere is normally looked up days before it
+        // airs, when it has no real format list yet at all (see hasPremiumFormat).
+        // Still worth checking — e.g. a video that's already live or published
+        // when added — since every confirmation is one less time the user needs
+        // a premiere to actually finish downloading before Premium* shows up.
+        if hasPremiumFormat(meta: meta) { settings.youtubePremiumConfirmed = true }
+
         return VideoLookupResult(title: title, scheduledDate: scheduledDate, isLiveNow: isLive, errorMessage: errorMessage)
+    }
+
+    /// Looks for YouTube Premium's higher-bitrate h264 variant in an already-fetched
+    /// format list: a second avc1 video-only track at the same (top) resolution as the
+    /// normal best, with a meaningfully higher bitrate. yt-dlp doesn't label these with
+    /// a dedicated field, so this is a margin-based heuristic (30% higher tbr than the
+    /// next-best track at that resolution) rather than an exact match — added
+    /// 15-10-2026 without a Premium account available to verify the real format list
+    /// against, so the margin may need adjusting once that's possible. Only ever used
+    /// to flip settings.youtubePremiumConfirmed on — the actual download-time quality
+    /// selection doesn't need this at all (see VideoQuality.sortSuffix).
+    private func hasPremiumFormat(meta: [String: Any]) -> Bool {
+        guard let formats = meta["formats"] as? [[String: Any]] else { return false }
+        struct Track { let height: Int; let tbr: Double }
+        let h264VideoOnly: [Track] = formats.compactMap { f in
+            guard let vcodec = f["vcodec"] as? String, vcodec.hasPrefix("avc1"),
+                  (f["acodec"] as? String) == "none",
+                  let height = f["height"] as? Int else { return nil }
+            let tbr = (f["tbr"] as? Double) ?? (f["tbr"] as? Int).map(Double.init) ?? 0
+            return Track(height: height, tbr: tbr)
+        }
+        guard let topHeight = h264VideoOnly.map(\.height).max() else { return false }
+        let atTopHeight = h264VideoOnly.filter { $0.height == topHeight }.sorted { $0.tbr > $1.tbr }
+        return atTopHeight.count >= 2 && atTopHeight[0].tbr > atTopHeight[1].tbr * 1.3
     }
 
     // MARK: - yt-dlp logic (ported from the Python script)
@@ -1370,8 +1401,8 @@ final class MonitorEngine: ObservableObject {
             "%(upload_date>%Y-%m-%d)s — %(title)s [\(tag)] (%(id)s).%(ext)s").path
         var args = [
             "--force-ipv4",
-            "-S", "codec:h264,res",
-            "-f", quality.formatSelector,
+            "-S", "codec:h264,res" + quality.sortSuffix,
+            "-f", quality.formatFilter,
             "--merge-output-format", "mkv",
             "--no-warnings",
             "--no-overwrites",
@@ -1671,6 +1702,12 @@ final class MonitorEngine: ObservableObject {
         let availability = meta["availability"] as? String ?? "unknown"
         let phase = desiredPhase(meta: meta, scheduled: v.scheduledDate)
         log("[\(v.label)] Check: live_status=\(liveStatus), availability=\(availability), phase=\(phase ?? "not yet")")
+
+        // The real, best chance to confirm Premium: lookupVideoInfo's check at
+        // add-time usually sees an empty format list (the stream doesn't exist
+        // yet), but by the time a premiere is actually live or VOD, the real
+        // formats are here.
+        if hasPremiumFormat(meta: meta) { settings.youtubePremiumConfirmed = true }
 
         if phase == "live", !v.liveDone {
             // Na een mislukking even wachten. Zonder dit startte elke ronde van
