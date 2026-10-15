@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.38</title>
+            <sparkle:version>1.6.38</sparkle:version>
+            <sparkle:shortVersionString>1.6.38</sparkle:shortVersionString>
+            <description><![CDATA[Fixed: "Log in to YouTube again" (Settings > Cookies) always opened Chrome, even with Safari explicitly selected as the cookie source — so logging in there didn't actually help. Now opens whichever browser is actually configured.]]></description>
+            <pubDate>Thu, 15 Oct 2026 21:40:26 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.38/Reprise.zip" length="4044512" type="application/octet-stream" sparkle:edSignature="rrNUFHojJab31+JWjyhRuakI+m9/smm+VYnIaaRYYscgjupttHMS3ejFfw83kwmWxMejOyxckG+MIoHbMiofAg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.37</title>
             <sparkle:version>1.6.37</sparkle:version>
             <sparkle:shortVersionString>1.6.37</sparkle:shortVersionString>
