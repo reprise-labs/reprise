@@ -1,5 +1,33 @@
 import Foundation
 
+/// Download quality, chosen per premiere at add/edit time. Optional on
+/// MonitoredVideo (nil-default) for the same decode-compatibility reason as
+/// the flags below — existing saved premieres without this field just fall
+/// back to .best, today's only behavior.
+enum VideoQuality: String, Codable, CaseIterable, Identifiable {
+    case best = "Best"
+    case saveSpace = "SaveSpace"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .best: return "Best available"
+        case .saveSpace: return "Smaller file (max 720p)"
+        }
+    }
+
+    /// yt-dlp format selector. .saveSpace caps the height so the sort (-S
+    /// codec:h264,res) still picks the best h264 track within that cap,
+    /// instead of always resolving to the full adaptive quality.
+    var formatSelector: String {
+        switch self {
+        case .best: return "bv*[vcodec^=avc1]+ba/b"
+        case .saveSpace: return "bv*[vcodec^=avc1][height<=720]+ba/b"
+        }
+    }
+}
+
 enum VideoStatus: String, Codable {
     // Raw values are kept stable (not translated) so existing saved data keeps decoding correctly.
     case waiting = "Wachten"
@@ -67,6 +95,8 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     /// melding sturen, net als liveNotified hierboven voorkomt bij LIVE. Optioneel
     /// om dezelfde decode-compatibiliteitsreden.
     var vodNotified: Bool? = nil
+    /// nil = .best, for the same decode-compatibility reason as the flags above.
+    var quality: VideoQuality? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
 

@@ -9,6 +9,7 @@ struct AddVideoView: View {
     @State private var url: String
     @State private var label: String
     @State private var scheduledDate: Date
+    @State private var quality: VideoQuality
 
     @State private var isLookingUp: Bool = false
     @State private var lookupMessage: String?
@@ -19,6 +20,7 @@ struct AddVideoView: View {
         _url = State(initialValue: video?.url ?? "")
         _label = State(initialValue: video?.label ?? "")
         _scheduledDate = State(initialValue: video?.scheduledDate ?? Date().addingTimeInterval(3600))
+        _quality = State(initialValue: video?.quality ?? .best)
     }
 
     private var isEditing: Bool { editingId != nil }
@@ -75,6 +77,19 @@ struct AddVideoView: View {
                     .labelsHidden()
             }
 
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Quality")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $quality) {
+                    ForEach(VideoQuality.allCases) { q in
+                        Text(q.displayName).tag(q)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel") {
@@ -84,9 +99,9 @@ struct AddVideoView: View {
                 Button(isEditing ? "Save" : "Add") {
                     let succeeded: Bool
                     if let editingId {
-                        succeeded = engine.updateVideo(id: editingId, url: url, label: label, scheduledDate: scheduledDate)
+                        succeeded = engine.updateVideo(id: editingId, url: url, label: label, scheduledDate: scheduledDate, quality: quality)
                     } else {
-                        succeeded = engine.addVideo(url: url, label: label, scheduledDate: scheduledDate)
+                        succeeded = engine.addVideo(url: url, label: label, scheduledDate: scheduledDate, quality: quality)
                     }
                     if succeeded {
                         StatusItemController.shared?.closeAddWindowAndShowMain()
