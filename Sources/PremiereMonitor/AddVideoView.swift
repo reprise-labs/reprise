@@ -81,13 +81,33 @@ struct AddVideoView: View {
                 Text("Quality")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                // YouTube-style quality menu. Premium* only appears at all once
+                // it's been confirmed (on any video, not necessarily this one) —
+                // before that there's nothing to offer, so it's left out rather
+                // than shown disabled. See VideoQuality and
+                // AppSettings.youtubePremiumConfirmed for why this can't reliably
+                // be narrowed down to "available for this exact video": a
+                // premiere is normally added days before it airs, when YouTube
+                // doesn't have a format list for it yet at all.
                 Picker("", selection: $quality) {
-                    ForEach(VideoQuality.allCases) { q in
+                    if engine.settings.youtubePremiumConfirmed == true {
+                        Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
+                    }
+                    ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
                         Text(q.displayName).tag(q)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .labelsHidden()
+                .frame(width: 180)
+
+                if quality == .premium {
+                    Text("* only if YouTube offers this video in Premium's enhanced bitrate — otherwise downloads as Best available.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 360, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             HStack {
