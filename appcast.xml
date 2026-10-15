@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.36</title>
+            <sparkle:version>1.6.36</sparkle:version>
+            <sparkle:shortVersionString>1.6.36</sparkle:shortVersionString>
+            <description><![CDATA[New channel-discovery bug fix (scheduled premieres were sometimes missed because the app only checked a channel's /streams tab, which YouTube hides for merely-scheduled content). New: choose download quality per premiere (Best available, 1080p/720p/480p/360p, or YouTube Premium's enhanced bitrate if your account has it — matches YouTube's own quality menu). The chosen quality now also shows up in the VOD-complete notification.]]></description>
+            <pubDate>Thu, 15 Oct 2026 21:09:08 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.36/Reprise.zip" length="4042997" type="application/octet-stream" sparkle:edSignature="3y17E3DR51pCr0fvswIpGwKIeuE+63a07klR9Dz7d3Xz/tyimYB5vpOD3DeKzLCigkPxcUMAadkY3tmV69HqAA==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.32</title>
             <sparkle:version>1.6.32</sparkle:version>
             <sparkle:shortVersionString>1.6.32</sparkle:shortVersionString>
