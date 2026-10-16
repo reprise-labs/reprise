@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.46</title>
+            <sparkle:version>1.6.46</sparkle:version>
+            <sparkle:shortVersionString>1.6.46</sparkle:shortVersionString>
+            <description><![CDATA[New "I have YouTube Premium" toggle in Settings > Quality — turns on 1080p Premium directly, instead of needing to Look Up a specific video known to have it first before the option ever appears on a fresh install.]]></description>
+            <pubDate>Fri, 16 Oct 2026 09:48:10 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.46/Reprise.zip" length="4088007" type="application/octet-stream" sparkle:edSignature="dddAbpyL/Mzdk0Gcfh8m7Vs448hM+AlKeWKWICo9r/5RXoRLUKHcF+BKPgZB1eUyMHjsrIHAwIQdaLr/W5uRCw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.45</title>
             <sparkle:version>1.6.45</sparkle:version>
             <sparkle:shortVersionString>1.6.45</sparkle:shortVersionString>
