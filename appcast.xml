@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.50</title>
+            <sparkle:version>1.6.50</sparkle:version>
+            <sparkle:shortVersionString>1.6.50</sparkle:shortVersionString>
+            <description><![CDATA[Official subtitles (not auto-generated captions) are now saved as .srt alongside the video, thumbnail, description, and log — same name, same folder.]]></description>
+            <pubDate>Fri, 16 Oct 2026 14:51:45 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.50/Reprise.zip" length="4117465" type="application/octet-stream" sparkle:edSignature="zmTc6zA0uqMVpd7thcshmRx1n6z3dKzG3tr6O2At8WHSU9tiXwjEdXZensubsHO1CZicCyz7Y2nj2ZIF/rTzBg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.49</title>
             <sparkle:version>1.6.49</sparkle:version>
             <sparkle:shortVersionString>1.6.49</sparkle:shortVersionString>
