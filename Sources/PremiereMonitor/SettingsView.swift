@@ -390,7 +390,7 @@ struct SettingsView: View {
     }
 
     private var qualityTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Default quality for new premieres")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
@@ -405,36 +405,20 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(width: 200)
-                Text("Starting choice when you add a premiere — manually or from Upcoming. Always "
-                    + "changeable per premiere in that screen.")
-                    .font(.system(size: 12))
+                Text("Always changeable per premiere in the Add screen.")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("About 1080p Premium")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Text("YouTube's enhanced-bitrate encode — only exists on some videos, and only if "
-                    + "the account behind your cookies (see the Cookies tab) actually has YouTube "
-                    + "Premium. It appears in every quality list (here and in the Add screen) only "
-                    + "once Reprise has actually confirmed it on some video; picking it for a video "
-                    + "that doesn't have it just downloads as Best available instead, silently.")
-                    .font(.system(size: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("1080p Premium only appears on some videos, and only with a Premium "
+                    + "account — picking it elsewhere just downloads as Best available.")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Why the Add screen's quality list sometimes shows everything")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Text("The Add screen can only show exactly what's available for a specific video "
-                    + "once it's a finished VOD — a premiere added before it airs, or anything "
-                    + "currently live, has no real format list yet to check, so every option is "
-                    + "offered there instead. Whatever you pick is still resolved for real once the "
-                    + "video actually downloads, and falls back to Best available if that choice "
-                    + "isn't actually there.")
-                    .font(.system(size: 12))
+                Text("The exact quality list only shows once a video is a finished VOD — "
+                    + "before that, every option is offered and resolved for real at download time.")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
