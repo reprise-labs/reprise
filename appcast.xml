@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.41</title>
+            <sparkle:version>1.6.41</sparkle:version>
+            <sparkle:shortVersionString>1.6.41</sparkle:shortVersionString>
+            <description><![CDATA[The quality dropdown now shows only the resolutions (and Premium) that genuinely exist for that specific video when Look Up can check — same as YouTube's own quality menu. A premiere looked up before it airs (no format list yet) still falls back to the general list, resolved for real at download time.]]></description>
+            <pubDate>Fri, 16 Oct 2026 05:18:05 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.41/Reprise.zip" length="4059132" type="application/octet-stream" sparkle:edSignature="Nka0o7TtWKrYOb1kZ+MCEBR0xbUpU7l34J0TAs3Ewg4iw4y/ipTzUiaRjFLwfxnIlROzCjyyVzlJ1xRdBixPBw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.40</title>
             <sparkle:version>1.6.40</sparkle:version>
             <sparkle:shortVersionString>1.6.40</sparkle:shortVersionString>
