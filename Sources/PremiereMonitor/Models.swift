@@ -265,4 +265,13 @@ struct AppSettings: Codable, Equatable {
     /// "Premium*" at all; once offered it stays offered, since by then every
     /// other video is just as plausible a candidate as the one that proved it.
     var youtubePremiumConfirmed: Bool? = nil
+    /// Quality pre-selected for a brand-new premiere (manual add or from a Discovered
+    /// row) — raw value of a VideoQuality case, nil/unrecognized = .best. Doesn't change
+    /// anything about how a specific premiere's own chosen quality is resolved once set;
+    /// this only decides where the picker starts out.
+    var defaultQuality: String? = nil
+
+    var defaultQualityResolved: VideoQuality {
+        defaultQuality.flatMap(VideoQuality.init(rawValue:)) ?? .best
+    }
 }

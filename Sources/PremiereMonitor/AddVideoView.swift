@@ -32,7 +32,7 @@ struct AddVideoView: View {
         _url = State(initialValue: video?.url ?? "")
         _label = State(initialValue: video?.label ?? "")
         _scheduledDate = State(initialValue: video?.scheduledDate ?? Date().addingTimeInterval(3600))
-        _quality = State(initialValue: video?.quality ?? .best)
+        _quality = State(initialValue: video?.quality ?? MonitorEngine.shared.settings.defaultQualityResolved)
     }
 
     /// URL and title are already known from channel discovery; scheduled time isn't
@@ -46,7 +46,7 @@ struct AddVideoView: View {
         _url = State(initialValue: discovered.url)
         _label = State(initialValue: discovered.title)
         _scheduledDate = State(initialValue: Date().addingTimeInterval(3600))
-        _quality = State(initialValue: .best)
+        _quality = State(initialValue: MonitorEngine.shared.settings.defaultQualityResolved)
     }
 
     private var isEditing: Bool { editingId != nil }
