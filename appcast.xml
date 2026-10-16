@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.39</title>
+            <sparkle:version>1.6.39</sparkle:version>
+            <sparkle:shortVersionString>1.6.39</sparkle:shortVersionString>
+            <description><![CDATA[Clicking Add on an Upcoming (discovered) premiere no longer tracks it instantly — it now opens the same Add dialog, pre-filled with the title and URL, with the scheduled time filled in automatically, so you can pick a download quality before it's actually added.]]></description>
+            <pubDate>Fri, 16 Oct 2026 04:03:30 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.39/Reprise.zip" length="4047027" type="application/octet-stream" sparkle:edSignature="/hRLUMk9DxMZIeHIxPxOHX9SwKgBMiQUh5uUiCkRdAvRHW+LVkKok/c9EoLjjoXO6j6IFcR1zc2rlQA36aVYBw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.38</title>
             <sparkle:version>1.6.38</sparkle:version>
             <sparkle:shortVersionString>1.6.38</sparkle:shortVersionString>
