@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.42</title>
+            <sparkle:version>1.6.42</sparkle:version>
+            <sparkle:shortVersionString>1.6.42</sparkle:shortVersionString>
+            <description><![CDATA[New Quality tab in Settings: set a default quality for new premieres, plus a plain-language explanation of what 1080p Premium means and why the Add screen's quality list is sometimes the full generic one instead of only what's actually available (only possible once a video is a finished VOD).]]></description>
+            <pubDate>Fri, 16 Oct 2026 05:27:06 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.42/Reprise.zip" length="4086094" type="application/octet-stream" sparkle:edSignature="cdwyAURq3beJTV4f5BItD8CPN4GDqle8ugNh08QOgn1k11AI54dvK3Un1s8xChiygeVN3zuYp0l5fWfa/K2/Bw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.41</title>
             <sparkle:version>1.6.41</sparkle:version>
             <sparkle:shortVersionString>1.6.41</sparkle:shortVersionString>
