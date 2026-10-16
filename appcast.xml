@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.47</title>
+            <sparkle:version>1.6.47</sparkle:version>
+            <sparkle:shortVersionString>1.6.47</sparkle:shortVersionString>
+            <description><![CDATA[Every download now also saves the real YouTube thumbnail (full resolution, as .jpg) and, when available, a text file with the video's description and chapters — all three files share the same name as the video.]]></description>
+            <pubDate>Fri, 16 Oct 2026 10:15:31 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.47/Reprise.zip" length="4099901" type="application/octet-stream" sparkle:edSignature="uhB3TDYFVc5D3wOjnQ3pkEzxLhv1pX+dC7YAXIKvrTewIZrwRG4DfpU4Fr5z9exXKa4WH4QZO4AtilkEZYU1Dg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.46</title>
             <sparkle:version>1.6.46</sparkle:version>
             <sparkle:shortVersionString>1.6.46</sparkle:shortVersionString>
