@@ -1437,7 +1437,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality, meta: [String: Any]) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1485,6 +1485,13 @@ final class MonitorEngine: ObservableObject {
             // with a "+" (e.g. "1080p Premium+medium") — only the part before that
             // is shown, see qualityLabel(fromFormatNote:).
             "--print", "after_move:REPRISE_NOTE:%(format_note)s",
+            // Grabs YouTube's own best-quality thumbnail (yt-dlp sorts by resolution
+            // itself, same as the video formats) — a guessed hqdefault.jpg CDN URL only
+            // ever gets 480x360; this can get the real maxresdefault (1280x720) when
+            // YouTube has one. --convert-thumbnails guarantees a .jpg on disk regardless
+            // of whether YouTube actually served it as webp or jpg.
+            "--write-thumbnail",
+            "--convert-thumbnails", "jpg",
             "-o", outTemplate
         ]
         if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
@@ -1579,8 +1586,43 @@ final class MonitorEngine: ObservableObject {
         lastCapturedFormatNote[videoId] = nil
 
         if rc == 0 {
-            log("[\(label)] Download complete (\(tag)) → \(capturedPath ?? outTemplate)\(capturedQualityLabel.map { " [\($0)]" } ?? "")")
-            return (true, capturedPath, capturedFormatId, capturedQualityLabel)
+            // Bakes the real, resolved quality (e.g. "1080p Premium", not whatever
+            // VideoQuality was *requested*) into the filename itself, right after the
+            // [LIVE]/[VOD] tag — same info already shown in the push notification, but
+            // visible on disk without having to dig through the log. Renamed after the
+            // fact rather than built into yt-dlp's own -o template: the clean label is
+            // derived from %(format_note)s (see qualityLabel(fromFormatNote:)), which
+            // for a merge comes back as e.g. "1080p Premium+medium" — not something
+            // yt-dlp's template language can trim on its own, whereas Swift already has
+            // to do that exact trimming for the push notification anyway.
+            var finalPath = capturedPath
+            if let capturedPath {
+                let original = URL(fileURLWithPath: capturedPath)
+                let dir = original.deletingLastPathComponent()
+                let originalBase = original.deletingPathExtension().lastPathComponent
+                let renamedBase = capturedQualityLabel.map {
+                    originalBase.replacingOccurrences(of: "[\(tag)]", with: "[\(tag)] [\($0)]")
+                } ?? originalBase
+
+                if renamedBase != originalBase {
+                    let renamedVideo = dir.appendingPathComponent(renamedBase + "." + original.pathExtension)
+                    if (try? FileManager.default.moveItem(at: original, to: renamedVideo)) != nil {
+                        finalPath = renamedVideo.path
+                    }
+                }
+                // --write-thumbnail/--convert-thumbnails write under the *original*
+                // (pre-quality-rename) base name, same as the video did before the
+                // rename above — move it alongside so both share the final name.
+                for ext in ["jpg", "jpeg", "webp", "png"] {
+                    let candidate = dir.appendingPathComponent(originalBase + "." + ext)
+                    guard FileManager.default.fileExists(atPath: candidate.path) else { continue }
+                    try? FileManager.default.moveItem(at: candidate, to: dir.appendingPathComponent(renamedBase + "." + ext))
+                    break
+                }
+                writeInfoFile(dir: dir, base: renamedBase, meta: meta)
+            }
+            log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate)")
+            return (true, finalPath, capturedFormatId, capturedQualityLabel)
         }
 
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
@@ -1607,6 +1649,39 @@ final class MonitorEngine: ObservableObject {
     private func qualityLabel(fromFormatNote note: String?) -> String? {
         guard let note, !note.isEmpty else { return nil }
         return note.split(separator: "+", maxSplits: 1).first.map(String.init)
+    }
+
+    /// Writes "<base>.txt" next to the downloaded video with its description and
+    /// chapters (if YouTube provided either) — both already present in the same
+    /// metadata fetch checkOneVideo did to decide the video was ready, so no extra
+    /// network request. Skipped entirely rather than writing an empty/title-only
+    /// file when the video has neither.
+    private func writeInfoFile(dir: URL, base: String, meta: [String: Any]) {
+        var parts: [String] = []
+        if let description = meta["description"] as? String, !description.isEmpty {
+            parts.append(description)
+        }
+        if let chapterLines = formattedChapters(meta) {
+            parts.append("Chapters:\n" + chapterLines)
+        }
+        guard !parts.isEmpty else { return }
+        try? parts.joined(separator: "\n\n").write(
+            to: dir.appendingPathComponent(base + ".txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// yt-dlp's standard chapter shape: a list of {start_time, title} (seconds, string).
+    /// Formatted as "m:ss — Title" (or "h:mm:ss" past the first hour), one per line.
+    private func formattedChapters(_ meta: [String: Any]) -> String? {
+        guard let chapters = meta["chapters"] as? [[String: Any]], !chapters.isEmpty else { return nil }
+        let lines = chapters.compactMap { chapter -> String? in
+            guard let start = chapter["start_time"] as? Double,
+                  let title = chapter["title"] as? String else { return nil }
+            let totalSeconds = Int(start)
+            let h = totalSeconds / 3600, m = (totalSeconds % 3600) / 60, s = totalSeconds % 60
+            let timestamp = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+            return "\(timestamp) — \(title)"
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     /// Which videos already logged a "check window started" line (not persisted).
@@ -1795,7 +1870,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingLive
             writeBack(v, id: videoId)
-            let (ok, path, _, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best)
+            let (ok, path, _, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best, meta: meta)
             v.liveDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
@@ -1843,7 +1918,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
-            let (ok, path, formatId, qualityLabel) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best)
+            let (ok, path, formatId, qualityLabel) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best, meta: meta)
             // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): heeftAdaptieveFormaten()
             // above checks whether the *format list* mentions high-quality tracks,
             // but that list can say yes before those tracks are actually fetchable
