@@ -405,6 +405,7 @@ final class MonitorEngine: ObservableObject {
         checkCookieBrowserAccess(silent: true)
         checkDiskSpace(silent: true)
         checkExternalTools(silent: true)
+        Task { await checkCookieLogin(force: true, silent: true) }
     }
 
     /// Your own Pushover credentials from Settings, if you've set them.
@@ -476,6 +477,33 @@ final class MonitorEngine: ObservableObject {
                         + "next to this one. Downloads of public videos keep working without cookies.")
         }
         return (false, "Failed: \(detail.isEmpty ? "could not fetch YouTube data." : detail)")
+    }
+
+    private var lastCookieLoginCheck: Date?
+
+    /// Runs the same real check as the "Test YouTube login" button in Settings, but
+    /// automatically (once a day, same self-throttle as checkYtDlpVersion) instead of
+    /// only when someone thinks to go click that button. checkCookieBrowserAccess()
+    /// above only proves the cookie *file* is readable (a TCC/Full Disk Access
+    /// question) — found 16-10-2026 via a user report on a second Mac: that check can
+    /// pass cleanly while yt-dlp's actual cookie extraction still fails or YouTube
+    /// still rejects the login, with no visible sign anything was wrong until the user
+    /// went looking for the manual test themselves. This surfaces that same failure as
+    /// a banner + push, proactively, the same way every other startup check here does.
+    func checkCookieLogin(force: Bool = false, silent: Bool = false) async {
+        guard cookieBrowser != nil else { return }
+        if !force, let last = lastCookieLoginCheck, Date().timeIntervalSince(last) < 86400 { return }
+        lastCookieLoginCheck = Date()
+
+        let (ok, message) = await testCookies()
+        if ok {
+            permissionWarnings["cookie-login"] = nil
+        } else {
+            permissionWarnings["cookie-login"] = message
+            if !silent {
+                notify(title: "Reprise: YouTube login check failed", message: message)
+            }
+        }
     }
 
     /// Opens YouTube in whichever browser Reprise is reading cookies from, so you can log
@@ -1918,8 +1946,10 @@ final class MonitorEngine: ObservableObject {
 
     private func tick() async {
         // Vóór de guard: deze mag ook draaien als er (nog) geen video's
-        // gevolgd worden. checkYtDlpVersion() remt zichzelf af tot 1x/dag.
+        // gevolgd worden. checkYtDlpVersion() en checkCookieLogin() remmen
+        // zichzelf af tot 1x/dag.
         await checkYtDlpVersion()
+        await checkCookieLogin()
         await checkChannels()
         checkDiskSpace()
         checkExternalTools()
