@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.44</title>
+            <sparkle:version>1.6.44</sparkle:version>
+            <sparkle:shortVersionString>1.6.44</sparkle:shortVersionString>
+            <description><![CDATA[Fixed messy button layout on Upcoming rows — Dismiss and Add are now matched, properly centered buttons instead of mismatched text-vs-button floating above the row.]]></description>
+            <pubDate>Fri, 16 Oct 2026 05:30:59 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.44/Reprise.zip" length="4090255" type="application/octet-stream" sparkle:edSignature="Job+JnFIpt7cdJJfgGKyA9FiVbAOICzo7TDAEBT5fgSL017vfVGDiXBDMB35Aw67YSbJrqnyzHQyPGGNLGDFDg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.43</title>
             <sparkle:version>1.6.43</sparkle:version>
             <sparkle:shortVersionString>1.6.43</sparkle:shortVersionString>
