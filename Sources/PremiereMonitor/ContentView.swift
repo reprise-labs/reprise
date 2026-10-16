@@ -245,7 +245,7 @@ struct ContentView: View {
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                         Button("Add") {
-                                            Task { await engine.addDiscovered(discovered) }
+                                            StatusItemController.shared?.showAddWindow(discovered: discovered)
                                         }
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.small)

@@ -335,6 +335,23 @@ final class StatusItemController: NSObject {
     }
 
     func showAddWindow(editing video: MonitoredVideo? = nil) {
+        prepareAddWindow(title: video == nil ? "Add new premiere" : "Edit premiere")
+        // Always a fresh view so the form starts with the right (empty or pre-filled) state.
+        addWindow?.contentView = NSHostingView(rootView: AddVideoView(editing: video))
+        showAuxiliaryWindow(addWindow!)
+    }
+
+    /// Opened from an Upcoming/Discovered row's "Add" button — pre-fills url/title from
+    /// the discovery and lets AddVideoView fetch the scheduled time itself (see its
+    /// .task), instead of committing straight to the tracked list with no chance to pick
+    /// quality first.
+    func showAddWindow(discovered: DiscoveredVideo) {
+        prepareAddWindow(title: "Add new premiere")
+        addWindow?.contentView = NSHostingView(rootView: AddVideoView(discovered: discovered))
+        showAuxiliaryWindow(addWindow!)
+    }
+
+    private func prepareAddWindow(title: String) {
         closeStrayWindows()
         if addWindow == nil {
             let window = NSWindow(
@@ -346,10 +363,7 @@ final class StatusItemController: NSObject {
             window.isReleasedWhenClosed = false
             self.addWindow = window
         }
-        addWindow?.title = video == nil ? "Add new premiere" : "Edit premiere"
-        // Always a fresh view so the form starts with the right (empty or pre-filled) state.
-        addWindow?.contentView = NSHostingView(rootView: AddVideoView(editing: video))
-        showAuxiliaryWindow(addWindow!)
+        addWindow?.title = title
     }
 
     func showSettingsWindow() {

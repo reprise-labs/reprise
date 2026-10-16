@@ -566,27 +566,16 @@ final class MonitorEngine: ObservableObject {
         log("Stopped watching channel: \(channel.name ?? channel.url)")
     }
 
-    /// Looks up a discovered video the same way the "Add premiere" screen does, adds it
-    /// to the tracked list on success, and removes it from the discovered pile either way
-    /// (a failed lookup here almost always means the premiere already started or was
-    /// pulled — nothing useful to retry).
-    @discardableResult
-    func addDiscovered(_ discovered: DiscoveredVideo) async -> Bool {
-        let result = await lookupVideoInfo(url: discovered.url)
-        let scheduledDate = result.scheduledDate ?? (result.isLiveNow ? Date() : nil)
-        var succeeded = false
-        if let scheduledDate {
-            succeeded = addVideo(url: discovered.url, label: result.title ?? discovered.title, scheduledDate: scheduledDate)
-        } else {
-            log("⚠️ Could not add discovered premiere \"\(discovered.title)\": \(result.errorMessage ?? "no scheduled time found")")
-        }
-        discoveredVideos.removeAll { $0.id == discovered.id }
-        Store.saveDiscovered(discoveredVideos)
-        return succeeded
-    }
-
     func dismissDiscovered(_ discovered: DiscoveredVideo) {
         discoveredVideos.removeAll { $0.id == discovered.id }
+        Store.saveDiscovered(discoveredVideos)
+    }
+
+    /// Same as above, by id — used once AddVideoView's own Add button (opened from a
+    /// Discovered row) actually succeeds, since by then the view only has the id, not
+    /// the DiscoveredVideo struct itself.
+    func dismissDiscovered(byId videoID: String) {
+        discoveredVideos.removeAll { $0.videoID == videoID }
         Store.saveDiscovered(discoveredVideos)
     }
 
