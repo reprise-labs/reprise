@@ -255,15 +255,18 @@ struct AppSettings: Codable, Equatable {
     /// auto-detection prefers Chrome unconditionally, which is wrong if you're actually
     /// logged into YouTube in Safari.
     var cookieBrowserPreference: String? = nil
-    /// Set to true the first time any video's real format list (checked either
-    /// at Look Up or, more often, once a premiere actually goes live/VOD —
-    /// see MonitorEngine.hasPremiumFormat) shows YouTube Premium's higher-
-    /// bitrate format via the current cookies. Never reset back to false
-    /// automatically — there's no reliable negative signal, since "not found
-    /// on this video" just as often means this particular video, not a lack
-    /// of Premium. Drives whether AddVideoView's quality dropdown offers
-    /// "Premium*" at all; once offered it stays offered, since by then every
-    /// other video is just as plausible a candidate as the one that proved it.
+    /// Set to true either automatically — the first time any video's real format list
+    /// (checked at Look Up, or once a premiere actually goes live/VOD — see
+    /// MonitorEngine.hasPremiumFormat) shows YouTube Premium's higher-bitrate format via
+    /// the current cookies — or directly, via the "I have YouTube Premium" toggle in
+    /// Settings' Quality tab. Added the manual toggle 16-10-2026: the automatic-only
+    /// version meant a fresh install needed its own one-off detection (a Look Up on some
+    /// video that happens to have the format) before Premium appeared at all, even with
+    /// the exact same Premium account's cookies as a Mac where it already works — the
+    /// toggle skips that ritual. Never reset back to false automatically (no reliable
+    /// negative signal — "not found on this video" usually just means this video), but
+    /// the user can still turn it off by hand via the same toggle. Drives whether
+    /// AddVideoView's quality dropdown offers "1080p Premium" at all.
     var youtubePremiumConfirmed: Bool? = nil
     /// Quality pre-selected for a brand-new premiere (manual add or from a Discovered
     /// row) — raw value of a VideoQuality case, nil/unrecognized = .best. Doesn't change

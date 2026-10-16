@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var minimalMenuBarIcon: Bool
     @State private var cookieBrowserPreference: String
     @State private var defaultQuality: VideoQuality
+    @State private var hasYouTubePremium: Bool
     @State private var pushoverToken: String
     @State private var pushoverUserKey: String
     @State private var showPushoverToken = false
@@ -64,6 +65,7 @@ struct SettingsView: View {
         _minimalMenuBarIcon = State(initialValue: s.minimalMenuBarIcon ?? true)
         _cookieBrowserPreference = State(initialValue: s.cookieBrowserPreference ?? "auto")
         _defaultQuality = State(initialValue: s.defaultQualityResolved)
+        _hasYouTubePremium = State(initialValue: s.youtubePremiumConfirmed ?? false)
         _pushoverToken = State(initialValue: s.pushoverToken ?? "")
         _pushoverUserKey = State(initialValue: s.pushoverUserKey ?? "")
         _automaticallyChecksForUpdates = State(
@@ -392,10 +394,29 @@ struct SettingsView: View {
     private var qualityTab: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
+                Toggle("I have YouTube Premium", isOn: $hasYouTubePremium)
+                // Separate from the automatic detection (Look Up / a premiere actually
+                // downloading finding a "Premium" format) that set this flag before —
+                // that only ever happens per Mac once Reprise itself has witnessed it
+                // on some video, which meant a fresh install (even with the exact same
+                // Premium account's cookies) needed a one-off "trick it with a known
+                // video" step before the option appeared at all. Flipping it on here
+                // does the same thing directly, no detection ritual required. Automatic
+                // detection still also flips it on by itself if it happens to notice —
+                // this toggle just means you don't have to wait for or force that.
+                Text("Unlocks 1080p Premium in the quality picker below. Still only "
+                    + "actually used on videos YouTube itself offers it for — otherwise "
+                    + "it quietly downloads as Best available.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Default quality for new premieres")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 Picker("", selection: $defaultQuality) {
-                    if engine.settings.youtubePremiumConfirmed == true {
+                    if hasYouTubePremium {
                         Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
                     }
                     ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
@@ -409,17 +430,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("About quality detection")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Text("1080p Premium only appears once confirmed on some video, and only "
-                    + "with a Premium account — elsewhere it just downloads as Best available. "
-                    + "The exact list only shows once a video is a finished VOD; before that, "
-                    + "every option is offered and resolved for real at download time.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("The exact quality list only shows once a video is a finished VOD; "
+                + "before that, every option is offered and resolved for real at download time.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -629,6 +644,7 @@ struct SettingsView: View {
         engine.settings.minimalMenuBarIcon = minimalMenuBarIcon
         engine.settings.cookieBrowserPreference = cookieBrowserPreference
         engine.settings.defaultQuality = defaultQuality.rawValue
+        engine.settings.youtubePremiumConfirmed = hasYouTubePremium
         engine.settings.pushoverToken = pushoverToken.isEmpty ? nil : pushoverToken
         engine.settings.pushoverUserKey = pushoverUserKey.isEmpty ? nil : pushoverUserKey
         StatusItemController.shared?.refreshActivationPolicy()
