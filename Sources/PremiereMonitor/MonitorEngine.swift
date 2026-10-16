@@ -1513,6 +1513,14 @@ final class MonitorEngine: ObservableObject {
             // of whether YouTube actually served it as webp or jpg.
             "--write-thumbnail",
             "--convert-thumbnails", "jpg",
+            // Official/manual subtitles only (not --write-auto-subs): YouTube's
+            // auto-generated captions also come auto-translated into dozens of
+            // languages, which would flood the download folder with mostly-unwanted
+            // files for a video that happens to have no real subtitles at all.
+            // --convert-subs guarantees .srt on disk — the most widely-supported
+            // format — regardless of whatever YouTube natively serves (usually vtt).
+            "--write-subs",
+            "--convert-subs", "srt",
             "-o", outTemplate
         ]
         if let denoPath { args += ["--js-runtimes", "deno:\(denoPath)"] }
@@ -1663,6 +1671,18 @@ final class MonitorEngine: ObservableObject {
                     guard FileManager.default.fileExists(atPath: candidate.path) else { continue }
                     try? FileManager.default.moveItem(at: candidate, to: dir.appendingPathComponent(renamedBase + "." + ext))
                     break
+                }
+                // Subtitles are named "<base>.<lang>.srt" — could be more than one file
+                // (one per available language), unlike the thumbnail above, so every
+                // match gets renamed rather than stopping at the first.
+                if let entries = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
+                    let subtitlePrefix = originalBase + "."
+                    for entry in entries where entry.hasPrefix(subtitlePrefix) && entry.hasSuffix(".srt") {
+                        let langSuffix = String(entry.dropFirst(originalBase.count))
+                        try? FileManager.default.moveItem(
+                            at: dir.appendingPathComponent(entry),
+                            to: dir.appendingPathComponent(renamedBase + langSuffix))
+                    }
                 }
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
                 try? transcript.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
