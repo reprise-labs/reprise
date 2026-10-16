@@ -228,7 +228,7 @@ struct ContentView: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 ForEach(engine.discoveredVideos) { discovered in
-                                    HStack(alignment: .top, spacing: 8) {
+                                    HStack(alignment: .center, spacing: 10) {
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(discovered.title)
                                                 .font(.system(size: 13, weight: .medium))
@@ -238,12 +238,16 @@ struct ContentView: View {
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
+                                        // Same bordered-button family as Cancel/Add in the Add
+                                        // dialog — a plain-text "Dismiss" next to a solid "Add"
+                                        // read as mismatched weight and, top-aligned against a
+                                        // two-line title block, looked like it was floating
+                                        // above the row instead of belonging to it (user
+                                        // feedback, 16-10-2026).
                                         Button("Dismiss") {
                                             engine.dismissDiscovered(discovered)
                                         }
-                                        .buttonStyle(.plain)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .controlSize(.small)
                                         Button("Add") {
                                             StatusItemController.shared?.showAddWindow(discovered: discovered)
                                         }
