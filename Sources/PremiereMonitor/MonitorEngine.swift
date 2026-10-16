@@ -850,7 +850,7 @@ final class MonitorEngine: ObservableObject {
 
     /// Runs a download command and reads stdout line by line, so we can show progress
     /// (yt-dlp's "[download]  NN.N% ..." lines) and capture the final file path.
-    private func runDownloadProcess(_ path: String, _ args: [String], videoId: UUID) async -> (Int32, String) {
+    private func runDownloadProcess(_ path: String, _ args: [String], videoId: UUID) async -> (rc: Int32, stdout: String, stderr: String) {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: path)
@@ -860,10 +860,21 @@ final class MonitorEngine: ObservableObject {
             process.standardOutput = outPipe
             process.standardError = errPipe
 
+            // Raw, complete accumulation alongside stderrData below — independent of
+            // stdoutBuffer's line-splitting (which exists purely to feed
+            // processDownloadLine for live UI updates, and can reorder/drop \r-redrawn
+            // progress lines that don't matter for that). Used to write out the full,
+            // unprocessed yt-dlp transcript for a completed download (see
+            // downloadVideo's .ytdlp.log) — added 16-10-2026 on request: "echt vanaf de
+            // start tot het laatste", not the curated subset the app's own Log panel
+            // already shows.
+            var stdoutData = Data()
             var stdoutBuffer = ""
             outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+                guard !data.isEmpty else { return }
+                stdoutData.append(data)
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
                 stdoutBuffer += chunk
                 // Live captures (--live-from-start) turned out — confirmed 04-10-2026
                 // with two separate real live streams, neither of which ever spawned
@@ -920,8 +931,9 @@ final class MonitorEngine: ObservableObject {
             process.terminationHandler = { proc in
                 outPipe.fileHandleForReading.readabilityHandler = nil
                 errPipe.fileHandleForReading.readabilityHandler = nil
+                let out = String(data: stdoutData, encoding: .utf8) ?? ""
                 let err = String(data: stderrData, encoding: .utf8) ?? ""
-                continuation.resume(returning: (proc.terminationStatus, err))
+                continuation.resume(returning: (proc.terminationStatus, out, err))
             }
 
             do {
@@ -929,7 +941,7 @@ final class MonitorEngine: ObservableObject {
             } catch {
                 outPipe.fileHandleForReading.readabilityHandler = nil
                 errPipe.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(returning: (-1, "\(error)"))
+                continuation.resume(returning: (-1, "", "\(error)"))
             }
         }
     }
@@ -1517,7 +1529,20 @@ final class MonitorEngine: ObservableObject {
         lastCapturedFilePath[videoId] = nil
         lastCapturedFormatId[videoId] = nil
         lastCapturedFormatNote[videoId] = nil
-        var (rc, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
+
+        // Complete, unfiltered yt-dlp output for this download — every attempt
+        // (including retries below) appended in order, written to a .ytdlp.log
+        // sidecar once the download finishes. Distinct from the app's own Log
+        // panel, which stays curated/throttled for readability; this is the full
+        // transcript for when that summary isn't enough to see what actually
+        // happened, added 16-10-2026 on request.
+        var transcript = ""
+        func appendAttempt(_ naam: String, _ out: String, _ err: String) {
+            transcript += "===== \(naam) =====\n--- stdout ---\n\(out)\n--- stderr ---\n\(err)\n\n"
+        }
+
+        var (rc, out, err) = await runDownloadProcess(ytDlpPath, args, videoId: videoId)
+        appendAttempt("Attempt 1", out, err)
         let gebruikteCookiesDezePoging = !cookiesGeweigerd && browser != nil
 
         // Zelfde verhaal als bij het ophalen van de gegevens: YouTube's
@@ -1529,7 +1554,8 @@ final class MonitorEngine: ObservableObject {
             lastCapturedFilePath[videoId] = nil
             lastCapturedFormatId[videoId] = nil
             lastCapturedFormatNote[videoId] = nil
-            (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+            (rc, out, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+            appendAttempt("Retry without cookies (bot-check)", out, err)
         } else if rc == 0, !isLive, gebruikteCookiesDezePoging, let fmt = lastCapturedFormatId[videoId], !fmt.contains("+") {
             // !isLive: a live capture only returns once the stream has already
             // ended (runDownloadProcess blocks for the whole --live-from-start
@@ -1572,7 +1598,8 @@ final class MonitorEngine: ObservableObject {
             lastCapturedFilePath[videoId] = nil
             lastCapturedFormatId[videoId] = nil
             lastCapturedFormatNote[videoId] = nil
-            (rc, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+            (rc, out, err) = await runDownloadProcess(ytDlpPath, zonder, videoId: videoId)
+            appendAttempt("Retry without cookies (noodformaat)", out, err)
             if rc == 0, let noodformaatPad, noodformaatPad != lastCapturedFilePath[videoId] {
                 try? FileManager.default.removeItem(atPath: noodformaatPad)
             }
@@ -1620,6 +1647,7 @@ final class MonitorEngine: ObservableObject {
                     break
                 }
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
+                try? transcript.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
             }
             log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate)")
             return (true, finalPath, capturedFormatId, capturedQualityLabel)
@@ -1635,10 +1663,22 @@ final class MonitorEngine: ObservableObject {
             // samengevoegd zijn (of al een los, compleet bestand was), dus de
             // "viel terug op het enkele noodformaat"-vraag is hier sowieso niet
             // aan de orde zoals bij een schone, verse download.
+            let geredURL = URL(fileURLWithPath: gered)
+            let geredBase = geredURL.deletingPathExtension().lastPathComponent
+            try? transcript.write(to: geredURL.deletingLastPathComponent().appendingPathComponent(geredBase + ".ytdlp.log"),
+                                   atomically: true, encoding: .utf8)
             return (true, gered, nil, nil)
         }
 
         log("[\(label)] Download failed (\(tag), rc=\(rc)): \(tail(err, lines: 12))")
+        // No real output file to match a name with, but the transcript is often the
+        // only place that shows *why* — written under a name that's at least found
+        // next to the (failed) video. No colons: same reasoning as --no-windows-filenames
+        // above, just applied to a name this function builds itself instead of yt-dlp's.
+        let faalFormatter = DateFormatter()
+        faalFormatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let failedLogName = "\(label) [\(tag)] — FAILED \(faalFormatter.string(from: Date())).ytdlp.log"
+        try? transcript.write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
         return (false, nil, nil, nil)
     }
 
