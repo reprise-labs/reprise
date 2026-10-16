@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.45</title>
+            <sparkle:version>1.6.45</sparkle:version>
+            <sparkle:shortVersionString>1.6.45</sparkle:shortVersionString>
+            <description><![CDATA[Quality tab in Settings now matches the look of the rest of Settings — the picker sizes to its content instead of sitting at an arbitrary fixed width, and the explanation text uses the same font size and spacing as every other tab.]]></description>
+            <pubDate>Fri, 16 Oct 2026 09:02:04 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.45/Reprise.zip" length="4086024" type="application/octet-stream" sparkle:edSignature="zdH/Mkr8KqTDGjWaaOzOe8Q44O/H38HWnCLOPDPngxFPCVLetCpTU6TrhLQ/Tf0nicXZGQvvSdNVS/mjaiEbCg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.44</title>
             <sparkle:version>1.6.44</sparkle:version>
             <sparkle:shortVersionString>1.6.44</sparkle:shortVersionString>
