@@ -1180,6 +1180,12 @@ final class MonitorEngine: ObservableObject {
         var scheduledDate: Date?
         var isLiveNow: Bool
         var errorMessage: String?
+        /// nil = no real format list existed yet to check (the normal case for a
+        /// premiere looked up before it airs) — AddVideoView falls back to its
+        /// generic quality list for that case. Non-nil = the genuinely available
+        /// options for *this* video, read straight off its real format list, the
+        /// same way YouTube's own quality menu only shows tiers that actually exist.
+        var availableQualities: [VideoQuality]?
     }
 
     func lookupVideoInfo(url: String) async -> VideoLookupResult {
@@ -1218,7 +1224,8 @@ final class MonitorEngine: ObservableObject {
         // a premiere to actually finish downloading before Premium* shows up.
         if hasPremiumFormat(meta: meta) { settings.youtubePremiumConfirmed = true }
 
-        return VideoLookupResult(title: title, scheduledDate: scheduledDate, isLiveNow: isLive, errorMessage: errorMessage)
+        return VideoLookupResult(title: title, scheduledDate: scheduledDate, isLiveNow: isLive,
+                                  errorMessage: errorMessage, availableQualities: availableQualities(meta: meta))
     }
 
     /// Looks for YouTube Premium's enhanced-bitrate track in an already-fetched format
@@ -1231,6 +1238,31 @@ final class MonitorEngine: ObservableObject {
         return formats.contains { f in
             (f["format_note"] as? String)?.localizedCaseInsensitiveContains("Premium") == true
         }
+    }
+
+    /// Which quality tiers genuinely exist for this video right now, read straight off
+    /// its real format list — added 16-10-2026 after a user pushed back on the generic
+    /// fixed quality list: "it should just check per video what's available", which is
+    /// exactly right whenever there's a real format list to check (an already-published
+    /// or already-live video). Returns nil when there isn't one yet (a premiere looked up
+    /// before it airs) — there's nothing real to filter against at that point, same
+    /// underlying reason .premium's selector still has to resolve at download time.
+    private func availableQualities(meta: [String: Any]) -> [VideoQuality]? {
+        guard let formats = meta["formats"] as? [[String: Any]], !formats.isEmpty else { return nil }
+        let avc1Heights = formats.compactMap { f -> Int? in
+            guard let vcodec = f["vcodec"] as? String, vcodec.hasPrefix("avc1"),
+                  (f["acodec"] as? String) == "none" else { return nil }
+            return f["height"] as? Int
+        }
+        guard let maxHeight = avc1Heights.max() else { return nil }
+
+        var result: [VideoQuality] = []
+        if hasPremiumFormat(meta: meta) { result.append(.premium) }
+        result.append(.best)
+        for tier in [VideoQuality.p1080, .p720, .p480, .p360] {
+            if let cap = tier.heightCap, maxHeight >= cap { result.append(tier) }
+        }
+        return result
     }
 
     // MARK: - yt-dlp logic (ported from the Python script)

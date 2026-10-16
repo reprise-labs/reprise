@@ -51,7 +51,10 @@ enum VideoQuality: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    private var heightCap: Int? {
+    /// Non-private so MonitorEngine's lookupVideoInfo can filter the add-screen's
+    /// dropdown down to tiers that genuinely exist for a given video, when it already
+    /// has a real format list to check against (see availableQualities(meta:)).
+    var heightCap: Int? {
         switch self {
         case .p1080: return 1080
         case .p720: return 720

@@ -19,6 +19,12 @@ struct AddVideoView: View {
     @State private var isLookingUp: Bool = false
     @State private var lookupMessage: String?
     @State private var lookupSucceeded: Bool = false
+    /// Real, per-video quality tiers from the last successful Look Up — nil until one
+    /// runs, and nil again whenever it finds no format list yet (a premiere looked up
+    /// before it airs). Drives the Quality picker directly when present instead of the
+    /// generic always-offer-everything list, same as YouTube's own menu only ever
+    /// shows tiers that genuinely exist for that exact video.
+    @State private var availableQualities: [VideoQuality]?
 
     init(editing video: MonitoredVideo? = nil) {
         self.editingId = video?.id
@@ -44,6 +50,14 @@ struct AddVideoView: View {
     }
 
     private var isEditing: Bool { editingId != nil }
+
+    private var pickerQualities: [VideoQuality] {
+        if let availableQualities { return availableQualities }
+        var list: [VideoQuality] = []
+        if engine.settings.youtubePremiumConfirmed == true { list.append(.premium) }
+        list.append(contentsOf: VideoQuality.allCases.filter { $0 != .premium })
+        return list
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -102,25 +116,25 @@ struct AddVideoView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 // YouTube-style quality menu, same label/position as YouTube's own
-                // (verified 15-10-2026): "1080p Premium" above plain "1080p" — not
-                // a standalone "Premium" entry. Only appears at all once it's been
-                // confirmed (on any video, not necessarily this one) — before that
-                // there's nothing to offer, so it's left out rather than shown
-                // disabled. See VideoQuality and AppSettings.youtubePremiumConfirmed
-                // for why this can't reliably be narrowed down to "available for
-                // this exact video": a premiere is normally added days before it
-                // airs, when YouTube doesn't have a format list for it yet at all.
+                // (verified 15-10-2026): "1080p Premium" above plain "1080p" — not a
+                // standalone "Premium" entry. Whenever Look Up found a real format
+                // list (the video's already live/published), this shows exactly the
+                // tiers that genuinely exist for it — same as YouTube's own menu.
+                // Before that lookup runs, or for a premiere looked up before it airs
+                // (no format list exists yet at all), falls back to the generic list:
+                // Premium only if ever confirmed elsewhere, every resolution cap
+                // offered regardless, resolved for real at download time instead.
                 Picker("", selection: $quality) {
-                    if engine.settings.youtubePremiumConfirmed == true {
-                        Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
-                    }
-                    ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
+                    ForEach(pickerQualities) { q in
                         Text(q.displayName).tag(q)
                     }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(width: 180)
+                .onChange(of: availableQualities) { _, new in
+                    if let new, !new.contains(quality) { quality = .best }
+                }
 
                 if quality == .premium {
                     Text("Only downloads at this bitrate if YouTube offers it for this video — otherwise falls back to Best available.")
@@ -170,6 +184,7 @@ struct AddVideoView: View {
         lookupMessage = nil
         let result = await engine.lookupVideoInfo(url: url)
         isLookingUp = false
+        availableQualities = result.availableQualities
 
         if let title = result.title, label.trimmingCharacters(in: .whitespaces).isEmpty {
             label = title
