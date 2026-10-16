@@ -390,7 +390,7 @@ struct SettingsView: View {
     }
 
     private var qualityTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Default quality for new premieres")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
@@ -404,21 +404,19 @@ struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 200)
                 Text("Always changeable per premiere in the Add screen.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("1080p Premium only appears on some videos, and only with a Premium "
-                    + "account — picking it elsewhere just downloads as Best available.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("The exact quality list only shows once a video is a finished VOD — "
-                    + "before that, every option is offered and resolved for real at download time.")
-                    .font(.system(size: 11))
+            VStack(alignment: .leading, spacing: 6) {
+                Text("About quality detection")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                Text("1080p Premium only appears once confirmed on some video, and only "
+                    + "with a Premium account — elsewhere it just downloads as Best available. "
+                    + "The exact list only shows once a video is a finished VOD; before that, "
+                    + "every option is offered and resolved for real at download time.")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
