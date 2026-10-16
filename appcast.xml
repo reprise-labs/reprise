@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.48</title>
+            <sparkle:version>1.6.48</sparkle:version>
+            <sparkle:shortVersionString>1.6.48</sparkle:shortVersionString>
+            <description><![CDATA[Every download (LIVE and VOD) now saves a complete, unfiltered yt-dlp log next to the video — the full transcript from the first fragment to the end, not just the curated progress lines already shown in the app itself.]]></description>
+            <pubDate>Fri, 16 Oct 2026 10:20:13 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.48/Reprise.zip" length="4108760" type="application/octet-stream" sparkle:edSignature="2w/ov7AIUHTtMvjMgGyEkM+/1xL45uSdHhKxCpyTA8kXfLuWs0yLyqIwkfI1OhDby/3iEth/amL2opK3fR8FCw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.47</title>
             <sparkle:version>1.6.47</sparkle:version>
             <sparkle:shortVersionString>1.6.47</sparkle:shortVersionString>
