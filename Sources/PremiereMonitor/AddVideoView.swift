@@ -169,11 +169,27 @@ struct AddVideoView: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+                // isLookingUp too, not just an empty URL: without it, clicking Add while
+                // a lookup is still in flight (the manual button already guards against
+                // this, but a Discovered row's automatic .task-triggered lookup has no
+                // button to guard) saves whatever scheduledDate/quality were sitting
+                // there before the real values came back. Found 16-10-2026 during a
+                // review, not a real report.
+                .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty || isLookingUp)
             }
         }
         .padding(20)
         .frame(width: 400)
+        // Catches a stale selection the .onChange above can't: editing a premiere
+        // that was saved with .premium, then later turning off "I have YouTube
+        // Premium" in Settings — pickerQualities' generic fallback no longer offers
+        // .premium, but quality (loaded straight from the saved video) still holds
+        // it, with no lookup ever running to trigger the onChange. Left alone, the
+        // picker shows no visible selection at all. Found 16-10-2026 during a
+        // review, not a real report.
+        .onAppear {
+            if !pickerQualities.contains(quality) { quality = .best }
+        }
         .task {
             if discoveredVideoId != nil { await lookupInfo() }
         }

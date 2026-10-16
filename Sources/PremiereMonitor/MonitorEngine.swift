@@ -469,10 +469,19 @@ final class MonitorEngine: ObservableObject {
             log("Cookie test passed — YouTube accepts your \(browserName) login.")
             return (true, "Success — YouTube accepts your \(browserName) login.")
         }
-        cookiesGeweigerd = true
         let detail = tail(err)
         log("Cookie test FAILED (rc=\(rc)): \(detail)")
         if cookieFoutmelding(err) {
+            // Only a recognized cookie-rejection sets this — not any failure. Found
+            // 16-10-2026: this used to fire on *any* failure, which was fine as long as
+            // this function was only ever triggered by a user clicking a button and
+            // seeing the result immediately. Now that checkCookieLogin() also calls this
+            // unattended once a day, a single transient failure unrelated to cookies at
+            // all (a network blip, the test video — possibly the first tracked
+            // premiere's own URL — being temporarily unavailable) would otherwise
+            // needlessly disable cookies app-wide for up to a day, with no one around to
+            // notice and retry.
+            cookiesGeweigerd = true
             return (false, "YouTube is rejecting your \(browserName) cookies. Log in again using the button "
                         + "next to this one. Downloads of public videos keep working without cookies.")
         }
@@ -1627,9 +1636,18 @@ final class MonitorEngine: ObservableObject {
                 let original = URL(fileURLWithPath: capturedPath)
                 let dir = original.deletingLastPathComponent()
                 let originalBase = original.deletingPathExtension().lastPathComponent
-                let renamedBase = capturedQualityLabel.map {
-                    originalBase.replacingOccurrences(of: "[\(tag)]", with: "[\(tag)] [\($0)]")
-                } ?? originalBase
+                // .backwards + only the *last* match: not replacingOccurrences(of:with:),
+                // which rewrites every match — a livestream legitimately titled with
+                // "[LIVE]" in it (common enough in concert-stream titling) would get the
+                // quality label spliced in twice, once at the real tag and once inside
+                // the title itself. The template always puts the real tag right before
+                // the trailing "(id)", i.e. last in the string, so the last match is the
+                // one actually meant. Found 16-10-2026 during a review, not a real report.
+                var renamedBase = originalBase
+                if let qualityLabel = capturedQualityLabel,
+                   let tagRange = originalBase.range(of: "[\(tag)]", options: .backwards) {
+                    renamedBase.replaceSubrange(tagRange, with: "[\(tag)] [\(qualityLabel)]")
+                }
 
                 if renamedBase != originalBase {
                     let renamedVideo = dir.appendingPathComponent(renamedBase + "." + original.pathExtension)
@@ -1675,9 +1693,17 @@ final class MonitorEngine: ObservableObject {
         // only place that shows *why* — written under a name that's at least found
         // next to the (failed) video. No colons: same reasoning as --no-windows-filenames
         // above, just applied to a name this function builds itself instead of yt-dlp's.
+        // "/" also needs handling here specifically — unlike the video/thumbnail/info
+        // filenames above, which all come from yt-dlp's own %(title)s (sanitized by
+        // yt-dlp itself), this name is built directly from the free-text label, which
+        // could be an actual artist name like "AC/DC" — appendingPathComponent would
+        // silently read that as a subdirectory that doesn't exist, and try? would
+        // swallow the resulting write failure with nothing written at all. Found
+        // 16-10-2026 during a review, not from a real report.
+        let veiligLabel = label.replacingOccurrences(of: "/", with: "-")
         let faalFormatter = DateFormatter()
         faalFormatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        let failedLogName = "\(label) [\(tag)] — FAILED \(faalFormatter.string(from: Date())).ytdlp.log"
+        let failedLogName = "\(veiligLabel) [\(tag)] — FAILED \(faalFormatter.string(from: Date())).ytdlp.log"
         try? transcript.write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
         return (false, nil, nil, nil)
     }
@@ -1714,7 +1740,12 @@ final class MonitorEngine: ObservableObject {
     private func formattedChapters(_ meta: [String: Any]) -> String? {
         guard let chapters = meta["chapters"] as? [[String: Any]], !chapters.isEmpty else { return nil }
         let lines = chapters.compactMap { chapter -> String? in
-            guard let start = chapter["start_time"] as? Double,
+            // Not just "as? Double": the very first chapter almost always starts at
+            // exactly 0 seconds, which JSONSerialization can hand back as a plain Int
+            // rather than a Double — the same quirk already found and worked around
+            // for the "tbr" field elsewhere in this file. Without this fallback, that
+            // near-universal first chapter would silently vanish from the info file.
+            guard let start = (chapter["start_time"] as? Double) ?? (chapter["start_time"] as? Int).map(Double.init),
                   let title = chapter["title"] as? String else { return nil }
             let totalSeconds = Int(start)
             let h = totalSeconds / 3600, m = (totalSeconds % 3600) / 60, s = totalSeconds % 60
