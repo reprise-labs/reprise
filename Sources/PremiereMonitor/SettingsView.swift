@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var startAtLoginNote: String?
     @State private var minimalMenuBarIcon: Bool
     @State private var cookieBrowserPreference: String
+    @State private var defaultQuality: VideoQuality
     @State private var pushoverToken: String
     @State private var pushoverUserKey: String
     @State private var showPushoverToken = false
@@ -33,7 +34,7 @@ struct SettingsView: View {
 
     private enum SettingsTab: String, CaseIterable {
         case general = "General", monitoring = "Monitoring", channels = "Channels", cookies = "Cookies",
-             notifications = "Notifications", about = "About"
+             quality = "Quality", notifications = "Notifications", about = "About"
 
         var icon: String {
             switch self {
@@ -41,6 +42,7 @@ struct SettingsView: View {
             case .monitoring: return "clock"
             case .channels: return "person.2"
             case .cookies: return "globe"
+            case .quality: return "slider.horizontal.3"
             case .notifications: return "bell"
             case .about: return "info.circle"
             }
@@ -61,6 +63,7 @@ struct SettingsView: View {
         _showDockIcon = State(initialValue: s.showDockIcon ?? false)
         _minimalMenuBarIcon = State(initialValue: s.minimalMenuBarIcon ?? true)
         _cookieBrowserPreference = State(initialValue: s.cookieBrowserPreference ?? "auto")
+        _defaultQuality = State(initialValue: s.defaultQualityResolved)
         _pushoverToken = State(initialValue: s.pushoverToken ?? "")
         _pushoverUserKey = State(initialValue: s.pushoverUserKey ?? "")
         _automaticallyChecksForUpdates = State(
@@ -125,6 +128,7 @@ struct SettingsView: View {
                     case .monitoring: monitoringTab
                     case .channels: channelsTab
                     case .cookies: cookiesTab
+                    case .quality: qualityTab
                     case .notifications: notificationsTab
                     case .about: aboutTab
                     }
@@ -385,6 +389,58 @@ struct SettingsView: View {
         }
     }
 
+    private var qualityTab: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Default quality for new premieres")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                Picker("", selection: $defaultQuality) {
+                    if engine.settings.youtubePremiumConfirmed == true {
+                        Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
+                    }
+                    ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
+                        Text(q.displayName).tag(q)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 200)
+                Text("Starting choice when you add a premiere — manually or from Upcoming. Always "
+                    + "changeable per premiere in that screen.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("About 1080p Premium")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                Text("YouTube's enhanced-bitrate encode — only exists on some videos, and only if "
+                    + "the account behind your cookies (see the Cookies tab) actually has YouTube "
+                    + "Premium. It appears in every quality list (here and in the Add screen) only "
+                    + "once Reprise has actually confirmed it on some video; picking it for a video "
+                    + "that doesn't have it just downloads as Best available instead, silently.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Why the Add screen's quality list sometimes shows everything")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                Text("The Add screen can only show exactly what's available for a specific video "
+                    + "once it's a finished VOD — a premiere added before it airs, or anything "
+                    + "currently live, has no real format list yet to check, so every option is "
+                    + "offered there instead. Whatever you pick is still resolved for real once the "
+                    + "video actually downloads, and falls back to Best available if that choice "
+                    + "isn't actually there.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var notificationsTab: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
@@ -590,6 +646,7 @@ struct SettingsView: View {
         engine.settings.showDockIcon = showDockIcon
         engine.settings.minimalMenuBarIcon = minimalMenuBarIcon
         engine.settings.cookieBrowserPreference = cookieBrowserPreference
+        engine.settings.defaultQuality = defaultQuality.rawValue
         engine.settings.pushoverToken = pushoverToken.isEmpty ? nil : pushoverToken
         engine.settings.pushoverUserKey = pushoverUserKey.isEmpty ? nil : pushoverUserKey
         StatusItemController.shared?.refreshActivationPolicy()
