@@ -5,6 +5,11 @@ struct AddVideoView: View {
 
     /// When editing an existing premiere, its id (nil when adding a new one).
     private let editingId: UUID?
+    /// When opened from an Upcoming/Discovered row's "Add" button, the id to remove
+    /// from discoveredVideos once the add actually succeeds — not just when this
+    /// dialog opens, so cancelling leaves it sitting in Upcoming for later, same as
+    /// never having clicked Add at all.
+    private let discoveredVideoId: String?
 
     @State private var url: String
     @State private var label: String
@@ -17,10 +22,25 @@ struct AddVideoView: View {
 
     init(editing video: MonitoredVideo? = nil) {
         self.editingId = video?.id
+        self.discoveredVideoId = nil
         _url = State(initialValue: video?.url ?? "")
         _label = State(initialValue: video?.label ?? "")
         _scheduledDate = State(initialValue: video?.scheduledDate ?? Date().addingTimeInterval(3600))
         _quality = State(initialValue: video?.quality ?? .best)
+    }
+
+    /// URL and title are already known from channel discovery; scheduled time isn't
+    /// (the flat-playlist channel listing that found this video doesn't carry it) —
+    /// fetched the same way a manual "Look Up" click would, automatically, the moment
+    /// this view appears (see .task below), so the user doesn't have to click it
+    /// themselves for something Reprise already had the means to fill in.
+    init(discovered: DiscoveredVideo) {
+        self.editingId = nil
+        self.discoveredVideoId = discovered.videoID
+        _url = State(initialValue: discovered.url)
+        _label = State(initialValue: discovered.title)
+        _scheduledDate = State(initialValue: Date().addingTimeInterval(3600))
+        _quality = State(initialValue: .best)
     }
 
     private var isEditing: Bool { editingId != nil }
@@ -125,6 +145,9 @@ struct AddVideoView: View {
                         succeeded = engine.addVideo(url: url, label: label, scheduledDate: scheduledDate, quality: quality)
                     }
                     if succeeded {
+                        if let discoveredVideoId {
+                            engine.dismissDiscovered(byId: discoveredVideoId)
+                        }
                         StatusItemController.shared?.closeAddWindowAndShowMain()
                     } else {
                         lookupMessage = "This URL is already used by another premiere."
@@ -137,6 +160,9 @@ struct AddVideoView: View {
         }
         .padding(20)
         .frame(width: 400)
+        .task {
+            if discoveredVideoId != nil { await lookupInfo() }
+        }
     }
 
     private func lookupInfo() async {
