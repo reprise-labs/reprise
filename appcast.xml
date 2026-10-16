@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.49</title>
+            <sparkle:version>1.6.49</sparkle:version>
+            <sparkle:shortVersionString>1.6.49</sparkle:shortVersionString>
+            <description><![CDATA[Bug fixes from a review of this week's changes: a label with a "/" (e.g. an artist name like AC/DC) could silently break the failure log; a video titled with "[LIVE]" in it could get the quality label spliced in twice; Add could be clicked before a lookup finished; editing an old Premium-quality premiere after turning Premium off could show no quality selected; a single unattended network hiccup could disable cookies for up to a day.]]></description>
+            <pubDate>Fri, 16 Oct 2026 14:35:17 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.49/Reprise.zip" length="4114030" type="application/octet-stream" sparkle:edSignature="3OWi5St0HkmkleLAfQOAEMJs3M5X9Fzz8SdeUOhKYvPjY50wqAxd2jzfhTtTesQIa/xhWc9lzJnOmN1Zko69DQ==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.48</title>
             <sparkle:version>1.6.48</sparkle:version>
             <sparkle:shortVersionString>1.6.48</sparkle:shortVersionString>
