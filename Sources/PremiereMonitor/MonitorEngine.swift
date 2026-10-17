@@ -1569,12 +1569,11 @@ final class MonitorEngine: ObservableObject {
         // happened, added 16-10-2026 on request.
         // Everything yt-dlp -F would show, without a separate -F call — meta already
         // has the full format list from the fetch checkOneVideo did to decide this
-        // video was ready. Printed up front, before any attempt output, so the
-        // question "what was actually available" and "what did we pick" can both be
-        // answered by this one file. Added 17-10-2026 on request, after a manual
-        // double-check of exactly this kind for a real download.
-        var transcript = "===== Available formats (yt-dlp -F equivalent, from the same pre-download metadata fetch) =====\n"
-            + formatTable(meta: meta) + "\n\n"
+        // video was ready. Which format actually got downloaded isn't known until
+        // after the attempts below run, so building the DOWNLOADED-first, bolded-row
+        // version of this has to wait until the end (see the success path) — this
+        // var only accumulates the raw per-attempt output here, not the table itself.
+        var transcript = ""
         func appendAttempt(_ naam: String, _ out: String, _ err: String) {
             transcript += "===== \(naam) =====\n--- stdout ---\n\(out)\n--- stderr ---\n\(err)\n\n"
         }
@@ -1706,11 +1705,18 @@ final class MonitorEngine: ObservableObject {
                     }
                 }
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
-                // The direct answer to "which of the formats listed above did we
-                // actually get" — no need to cross-reference format_id by hand.
-                transcript += "===== DOWNLOADED =====\n\(capturedFormatId ?? "?")"
-                    + (capturedQualityLabel.map { " (\($0))" } ?? "") + "\n"
-                try? transcript.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
+                // DOWNLOADED first — on request 17-10-2026, so the one thing most
+                // worth knowing doesn't require scrolling past a full yt-dlp
+                // transcript (which can run to hundreds of progress lines) to find.
+                // The format table right after it answers "what else was available",
+                // with the matching row(s) bolded so there's no need to
+                // cross-reference the format_id above against the table by hand.
+                let downloadedHeader = "===== DOWNLOADED =====\n\(capturedFormatId ?? "?")"
+                    + (capturedQualityLabel.map { " (\($0))" } ?? "") + "\n\n"
+                let formatsSection = "===== Available formats (yt-dlp -F equivalent, from the same pre-download metadata fetch) =====\n"
+                    + formatTable(meta: meta, downloadedFormatId: capturedFormatId) + "\n\n"
+                let fullLog = downloadedHeader + formatsSection + transcript
+                try? fullLog.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
             }
             // Whether what actually landed matches the real ceiling for this exact
             // video — not just "the selector didn't error" (same gap that let the
@@ -1732,6 +1738,12 @@ final class MonitorEngine: ObservableObject {
             return (true, finalPath, capturedFormatId, capturedQualityLabel, qualityConfirmed)
         }
 
+        // Neither recovery path below knows a real format_id (see the comment on the
+        // reddenNaFout branch), so there's nothing to bold here — just the plain table,
+        // same as before, now placed ahead of the attempt transcripts either way.
+        let formatsSection = "===== Available formats (yt-dlp -F equivalent, from the same pre-download metadata fetch) =====\n"
+            + formatTable(meta: meta) + "\n\n"
+
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
         // er op schijf staat, dan pas iemand wakker maken.
         if let gered = reddenNaFout(url: url, tag: tag, label: label) {
@@ -1744,8 +1756,9 @@ final class MonitorEngine: ObservableObject {
             // aan de orde zoals bij een schone, verse download.
             let geredURL = URL(fileURLWithPath: gered)
             let geredBase = geredURL.deletingPathExtension().lastPathComponent
-            try? transcript.write(to: geredURL.deletingLastPathComponent().appendingPathComponent(geredBase + ".ytdlp.log"),
-                                   atomically: true, encoding: .utf8)
+            try? (formatsSection + transcript).write(
+                to: geredURL.deletingLastPathComponent().appendingPathComponent(geredBase + ".ytdlp.log"),
+                atomically: true, encoding: .utf8)
             return (true, gered, nil, nil, nil)
         }
 
@@ -1765,7 +1778,7 @@ final class MonitorEngine: ObservableObject {
         let faalFormatter = DateFormatter()
         faalFormatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         let failedLogName = "\(veiligLabel) [\(tag)] — FAILED \(faalFormatter.string(from: Date())).ytdlp.log"
-        try? transcript.write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
+        try? (formatsSection + transcript).write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
         return (false, nil, nil, nil, nil)
     }
 
@@ -1818,10 +1831,14 @@ final class MonitorEngine: ObservableObject {
     /// top-to-bottom the same way the resolution options do; audio-only and
     /// storyboard/image entries sort after (nil height) in whatever order they
     /// arrived in, grouped together at the end rather than interleaved.
-    private func formatTable(meta: [String: Any]) -> String {
+    private func formatTable(meta: [String: Any], downloadedFormatId: String? = nil) -> String {
         guard let formats = meta["formats"] as? [[String: Any]], !formats.isEmpty else {
             return "(no format list available — this video has no real formats yet, e.g. a premiere that hasn't aired)"
         }
+        // A merged download's format_id looks like "356+251" (video+audio) — split
+        // so both component rows get marked, not just a never-matching exact
+        // comparison against the whole combined id.
+        let downloadedIds = Set((downloadedFormatId ?? "").split(separator: "+").map(String.init))
         let rows = formats.sorted { a, b in
             ((a["height"] as? Int) ?? -1) > ((b["height"] as? Int) ?? -1)
         }.map { f -> String in
@@ -1839,7 +1856,13 @@ final class MonitorEngine: ObservableObject {
             let acodec = (f["acodec"] as? String).flatMap { $0 == "none" ? nil : $0 }
             let note = (f["format_note"] as? String).map { " [\($0)]" } ?? ""
             let codecs = [vcodec, acodec].compactMap { $0 }.joined(separator: "+")
-            return "\(id)\t\(ext)\t\(resolution)\t\(tbrStr)\t\(codecs)\(note)"
+            let line = "\(id)\t\(ext)\t\(resolution)\t\(tbrStr)\t\(codecs)\(note)"
+            // Marked with **bold** markdown rather than anything terminal/ANSI-only —
+            // readable either way (as literal asterisks in a plain text viewer, or
+            // rendered bold in anything that understands markdown), on request
+            // 17-10-2026 to make the one actually-downloaded row stand out at a glance
+            // instead of having to cross-reference the DOWNLOADED line by hand.
+            return downloadedIds.contains(id) ? "**\(line)**" : line
         }
         return (["id\text\tresolution\ttbr\tcodecs"] + rows).joined(separator: "\n")
     }
