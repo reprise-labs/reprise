@@ -56,8 +56,16 @@ struct ContentView: View {
     /// last row before the log section started (28-09-2026 feedback). Capping its max
     /// height to roughly what the current rows actually need means VSplitView gives any
     /// leftover window height to the log pane below instead, which can always use more
-    /// room. Still grows normally up to the original 260 once there's enough content to
-    /// fill it (3+ rows).
+    /// room. Still grows normally up to the cap once there's enough content to fill it.
+    ///
+    /// The cap itself was 260 (~3 rows) until 17-10-2026: with several premieres queued
+    /// up via channel watching, that meant scrolling inside a cramped ~3-row box even
+    /// though the window itself had room to grow — annoying enough on its own, worse
+    /// over a remote-desktop connection where trackpad/mouse scroll events don't always
+    /// land cleanly in a small inner scroll area (user report + screenshots, several
+    /// tracked premieres queued at once). Raised to 440 (~6 rows) so a realistic queue
+    /// is visible without scrolling at all; still only grows as large as the content
+    /// actually needs for the small-list case the original fix was about.
     ///
     /// Based on the larger of the two tabs' row counts, not just whichever is currently
     /// selected — using only the active tab's count meant switching between Tracked and
@@ -70,7 +78,7 @@ struct ContentView: View {
         let approxRowHeight: CGFloat = 72
         let rowCount = max(sortedVideos.count, engine.discoveredVideos.count)
         let content = header + CGFloat(max(rowCount, 1)) * approxRowHeight
-        return min(max(content, 160), 260)
+        return min(max(content, 160), 440)
     }
 
     var body: some View {
@@ -267,7 +275,16 @@ struct ContentView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: selectedSection)
             .animation(.easeInOut(duration: 0.2), value: engine.permissionWarnings.isEmpty)
-            .frame(minHeight: 160, maxHeight: videoListMaxHeight)
+            // idealHeight AND layoutPriority, not just min/maxHeight: VSplitView turned out
+            // to favor the *log* pane below for any extra window height — even with this
+            // pane's own maxHeight raised and an idealHeight added, confirmed 17-10-2026 by
+            // measuring the actual rendered panes (list stayed ~238px, log grew to ~261px,
+            // despite the list's new 440 cap) — the log pane has no maxHeight of its own, and
+            // VSplitView apparently treats that as implicit priority. layoutPriority(1) here
+            // (log pane stays at the SwiftUI default, 0) makes this pane's own min/ideal/max
+            // win that tug-of-war instead.
+            .frame(minHeight: 160, idealHeight: videoListMaxHeight, maxHeight: videoListMaxHeight)
+            .layoutPriority(1)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("Log")
@@ -307,7 +324,10 @@ struct ContentView: View {
             .frame(minHeight: 120)
             .background(Color(nsColor: .textBackgroundColor))
         }
-        .frame(minWidth: 620, minHeight: 480)
+        // minHeight raised from 480 alongside videoListMaxHeight's bump to 440 (see that
+        // property's comment) — without this the window's own floor would still squeeze
+        // the list pane back down below its new cap whenever it opens at minimum size.
+        .frame(minWidth: 620, minHeight: 560)
     }
 
     private func confirmDelete(_ video: MonitoredVideo) {

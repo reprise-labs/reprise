@@ -33,8 +33,15 @@ final class StatusItemController: NSObject {
         .store(in: &cancellables)
 
         let hosting = NSHostingView(rootView: ContentView())
+        // Matches ContentView's own .frame(minWidth: 620, minHeight: 560) exactly —
+        // a smaller initial contentRect here doesn't reliably get grown to that SwiftUI
+        // minimum on first open, so the window used to launch at a cramped 560x480
+        // (narrower *and* shorter than ContentView's own declared floor) regardless of
+        // what that floor said. Found 17-10-2026 raising videoListMaxHeight for easier
+        // scrolling with several tracked premieres queued — the new taller minHeight
+        // had no visible effect until this literal was updated to match it.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
