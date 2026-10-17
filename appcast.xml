@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.51</title>
+            <sparkle:version>1.6.51</sparkle:version>
+            <sparkle:shortVersionString>1.6.51</sparkle:shortVersionString>
+            <description><![CDATA[Every VOD now confirms whether it really got the best possible quality for that exact video — not just a label, but an explicit check against what was actually available, shown as ✅ confirmed best available or ⚠️ lower than expected in the push notification and log.]]></description>
+            <pubDate>Sat, 17 Oct 2026 05:18:27 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.51/Reprise.zip" length="4121391" type="application/octet-stream" sparkle:edSignature="C29+w+5d0dxcL8JRAddG7wjhA2jOj5QAaIcrCv9QO3M1T7hilBJBuWlb4zXlbJz72d/MwsuAF9ZVr7Mkj+MxCw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.50</title>
             <sparkle:version>1.6.50</sparkle:version>
             <sparkle:shortVersionString>1.6.50</sparkle:shortVersionString>
