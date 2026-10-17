@@ -1519,7 +1519,18 @@ final class MonitorEngine: ObservableObject {
             // files for a video that happens to have no real subtitles at all.
             // --convert-subs guarantees .srt on disk — the most widely-supported
             // format — regardless of whatever YouTube natively serves (usually vtt).
+            //
+            // --sub-langs "en,-live_chat": without it, --write-subs defaults to "en"
+            // when available, but falls back to grabbing *whatever subtitle-like
+            // track exists* when it isn't — on a video originally streamed live,
+            // that's the live chat replay, which YouTube exposes as a pseudo-
+            // subtitle language literally named "live_chat". Confirmed 17-10-2026 on
+            // a real download: it silently produced a 5.8KB .live_chat.json next to
+            // the real subtitle output, which isn't a subtitle at all. "en,-live_chat"
+            // keeps the exact original default (just English, nothing when that
+            // doesn't exist) while excluding that one specific non-subtitle track.
             "--write-subs",
+            "--sub-langs", "en,-live_chat",
             "--convert-subs", "srt",
             "-o", outTemplate
         ]
