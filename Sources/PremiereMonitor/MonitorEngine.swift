@@ -43,6 +43,7 @@ final class MonitorEngine: ObservableObject {
         MonitorEngine.findExecutable("yt-dlp") ?? "/opt/homebrew/bin/yt-dlp"
     }
     private var ffmpegPath: String? { MonitorEngine.findExecutable("ffmpeg") }
+    private var ffprobePath: String? { MonitorEngine.findExecutable("ffprobe") }
     private var brewPath: String? { MonitorEngine.findExecutable("brew") }
     // Reprise.app is launched by LaunchServices, not a shell, so its PATH is
     // just /usr/bin:/bin:/usr/sbin:/sbin — confirmed 04-10-2026 via `ps eww`.
@@ -1464,15 +1465,15 @@ final class MonitorEngine: ObservableObject {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
-        // "2026-09-19 — Title [LIVE] (videoID).ext" instead of
-        // "20260919 - Title - videoID [LIVE].ext": a readable date, and the
-        // video ID tucked away at the end in parens instead of jammed into
-        // the middle of the title with dashes on both sides. The ID still has
-        // to appear somewhere in the name — reddenNaFout() greps for it to
-        // salvage a stream that ended before the merge — but where it sits is
-        // free, so it doesn't need to clutter the part you actually read.
+        // "Title [LIVE] (videoID).ext" — the date prefix this used to have
+        // ("2026-09-19 — Title ...") was dropped on request 17-10-2026; the video ID
+        // still sits at the end in parens instead of jammed into the middle of the
+        // title with dashes on both sides. The ID still has to appear somewhere in
+        // the name — reddenNaFout() greps for it to salvage a stream that ended
+        // before the merge — but where it sits is free, so it doesn't need to
+        // clutter the part you actually read.
         let outTemplate = downloadRoot.appendingPathComponent(
-            "%(upload_date>%Y-%m-%d)s — %(title)s [\(tag)] (%(id)s).%(ext)s").path
+            "%(title)s [\(tag)] (%(id)s).%(ext)s").path
         var args = [
             "--force-ipv4",
             "-S", "codec:h264,res",
@@ -1661,6 +1662,14 @@ final class MonitorEngine: ObservableObject {
             // for a merge comes back as e.g. "1080p Premium+medium" — not something
             // yt-dlp's template language can trim on its own, whereas Swift already has
             // to do that exact trimming for the push notification anyway.
+            // Computed here (not after the rename block below) so writeArchiveInfoFile,
+            // called from inside that block, can include it — moved up from its
+            // original spot right before the final return, which is now unreachable
+            // from inside that block's scope.
+            let expectedHeight = expectedMaxHeight(meta: meta, quality: quality)
+            let achieved = achievedHeight(fromQualityLabel: capturedQualityLabel)
+            let qualityConfirmed: Bool? = (expectedHeight != nil && achieved != nil) ? (achieved! >= expectedHeight!) : nil
+
             var finalPath = capturedPath
             if let capturedPath {
                 let original = URL(fileURLWithPath: capturedPath)
@@ -1707,6 +1716,17 @@ final class MonitorEngine: ObservableObject {
                     }
                 }
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
+                // Personal archival document (title/channel/URL/codecs/measured
+                // bitrates/file size/format IDs) — added 17-10-2026 on request, modeled
+                // after the user's own manual-download archive notes but generic (no
+                // concert-specific facts like a venue or performance date, since those
+                // aren't in any video's metadata — that context was the user's own
+                // knowledge about those specific videos, not something extractable here).
+                await writeArchiveInfoFile(
+                    dir: dir, base: renamedBase, url: url, meta: meta, tag: tag,
+                    formatId: capturedFormatId, qualityLabel: capturedQualityLabel,
+                    videoPath: finalPath ?? capturedPath,
+                    expectedHeight: expectedHeight, achieved: achieved, qualityConfirmed: qualityConfirmed)
                 // DOWNLOADED first — on request 17-10-2026, so the one thing most
                 // worth knowing doesn't require scrolling past a full yt-dlp
                 // transcript (which can run to hundreds of progress lines) to find.
@@ -1720,14 +1740,6 @@ final class MonitorEngine: ObservableObject {
                 let fullLog = downloadedHeader + formatsSection + transcript
                 try? fullLog.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
             }
-            // Whether what actually landed matches the real ceiling for this exact
-            // video — not just "the selector didn't error" (same gap that let the
-            // "bv" vs "bv*" regression go unnoticed for a while). nil means there
-            // was nothing real to compare against (e.g. no format list at all),
-            // which stays silent rather than claiming either confirmed or not.
-            let expectedHeight = expectedMaxHeight(meta: meta, quality: quality)
-            let achieved = achievedHeight(fromQualityLabel: capturedQualityLabel)
-            let qualityConfirmed: Bool? = (expectedHeight != nil && achieved != nil) ? (achieved! >= expectedHeight!) : nil
             switch qualityConfirmed {
             case true:
                 log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate) ✅ confirmed best available for this video")
@@ -1797,7 +1809,7 @@ final class MonitorEngine: ObservableObject {
     /// Fire-and-forget: runs after the primary file already succeeded, and a
     /// failure here is only logged — it never touches the primary download's own
     /// success/failure or notification.
-    private func downloadAlternatePremiumCodec(url: String, label: String, videoId: UUID, meta: [String: Any], primaryFormatId: String?) async {
+    private func downloadAlternatePremiumCodec(url: String, label: String, videoId: UUID, meta: [String: Any], primaryFormatId: String?, primaryVideoPath: String?) async {
         guard let formats = meta["formats"] as? [[String: Any]] else { return }
         // The primary download's video-only component (before the "+audio" half) —
         // nothing to compare against without it (e.g. it fell back to a single
@@ -1844,8 +1856,40 @@ final class MonitorEngine: ObservableObject {
             quality: .premium, meta: meta, formatFilterOverride: altFilter)
         if ok {
             log("[\(label)] Alternate Premium codec download complete → \(path ?? "?")")
+            // Cross-reference note in both archive-info.txt files — only added once
+            // this second download genuinely succeeded, not assumed in advance, so
+            // the primary's document never points at a file that doesn't exist.
+            crossReferenceArchiveInfo(primaryPath: primaryVideoPath, altPath: path,
+                                       primaryFamily: primaryFamily, altFamilies: altFamilies)
         } else {
             log("[\(label)] Alternate Premium codec download failed — YouTube may not be offering that codec right now (format availability can shift between requests). Primary file is unaffected.")
+        }
+    }
+
+    /// Appends a short note to each file's .archive-info.txt pointing at the other
+    /// — both documents already exist by the time this runs (each written by its
+    /// own downloadVideo call), so this only adds the one thing neither could know
+    /// about itself: that a sibling file exists at all.
+    private func crossReferenceArchiveInfo(primaryPath: String?, altPath: String?, primaryFamily: String, altFamilies: Set<String>) {
+        guard let primaryPath, let altPath else { return }
+        func archiveInfoURL(for videoPath: String) -> URL {
+            let url = URL(fileURLWithPath: videoPath)
+            let base = url.deletingPathExtension().lastPathComponent
+            return url.deletingLastPathComponent().appendingPathComponent(base + ".archive-info.txt")
+        }
+        let primaryName = URL(fileURLWithPath: primaryPath).lastPathComponent
+        let altName = URL(fileURLWithPath: altPath).lastPathComponent
+        let altFamilyList = altFamilies.sorted().joined(separator: ", ")
+        let note = "\n\n" + String(repeating: "-", count: 40) + "\nALTERNATE CODEC\n" + String(repeating: "-", count: 40) + "\n"
+        let primaryNote = note + "YouTube also offers this video's Premium track in \(altFamilyList), "
+            + "downloaded separately as:\n\(altName)"
+        let altNote = note + "This is the alternate-codec (\(altFamilies.sorted().joined(separator: "/"))) "
+            + "download alongside the primary (\(primaryFamily)) file:\n\(primaryName)"
+        if let existing = try? String(contentsOf: archiveInfoURL(for: primaryPath), encoding: .utf8) {
+            try? (existing + primaryNote).write(to: archiveInfoURL(for: primaryPath), atomically: true, encoding: .utf8)
+        }
+        if let existing = try? String(contentsOf: archiveInfoURL(for: altPath), encoding: .utf8) {
+            try? (existing + altNote).write(to: archiveInfoURL(for: altPath), atomically: true, encoding: .utf8)
         }
     }
 
@@ -1965,6 +2009,211 @@ final class MonitorEngine: ObservableObject {
         guard !parts.isEmpty else { return }
         try? parts.joined(separator: "\n\n").write(
             to: dir.appendingPathComponent(base + ".txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// Personal archival document, modeled after the user's own manual-download
+    /// notes (17-10-2026) but generic: title/channel/upload date/URL/video ID,
+    /// the exact format selector and format IDs Reprise used, and *measured*
+    /// (not just YouTube's stated) codec/resolution/bitrate/file size via ffprobe
+    /// on the real downloaded file — the same rigor already used earlier this
+    /// session to double-check quality by hand. No concert-specific facts (venue,
+    /// performance date) since those aren't in any video's metadata; that context
+    /// in the user's own notes was their own knowledge, not something extractable
+    /// here for an arbitrary video. Written in English throughout (unlike the
+    /// manual Dutch originals, done this way on request so it's consistent for
+    /// any channel/language Reprise tracks, not just Dutch ones).
+    private func writeArchiveInfoFile(
+        dir: URL, base: String, url: String, meta: [String: Any], tag: String,
+        formatId: String?, qualityLabel: String?, videoPath: String?,
+        expectedHeight: Int?, achieved: Int?, qualityConfirmed: Bool?
+    ) async {
+        guard let videoPath else { return }
+        var lines: [String] = []
+        lines.append("VIDEO ARCHIVE INFO")
+        lines.append("")
+        lines.append("Filename:")
+        lines.append(URL(fileURLWithPath: videoPath).lastPathComponent)
+        lines.append("")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("SOURCE")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("Title:")
+        lines.append((meta["title"] as? String) ?? (meta["fulltitle"] as? String) ?? "(unknown)")
+        lines.append("")
+        lines.append("Channel:")
+        lines.append((meta["uploader"] as? String) ?? (meta["channel"] as? String) ?? "(unknown)")
+        lines.append("")
+        lines.append("Uploaded:")
+        lines.append(formattedUploadDate(meta["upload_date"] as? String) ?? "(unknown)")
+        lines.append("")
+        lines.append("YouTube:")
+        lines.append(url)
+        lines.append("")
+        lines.append("Video ID:")
+        lines.append((meta["id"] as? String) ?? extractYouTubeID(from: url) ?? "(unknown)")
+        lines.append("")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("DOWNLOAD PROCESS")
+        lines.append(String(repeating: "-", count: 40))
+        let today = DateFormatter()
+        today.dateFormat = "d MMMM yyyy"
+        today.locale = Locale(identifier: "en_US")
+        lines.append("Downloaded automatically by Reprise (macOS menu-bar app) via a YouTube account "
+            + "(browser cookies), on \(today.string(from: Date())).")
+        lines.append("Video and audio tracks downloaded separately and merged into an MKV container "
+            + "with ffmpeg. No re-encoding, recompression, or quality loss applied.")
+        lines.append("")
+        lines.append("Formats downloaded:")
+        lines.append(formatId ?? "(unknown)")
+        lines.append("")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("TECHNICAL SPECIFICATIONS")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("Container: Matroska Video (.mkv)")
+        lines.append("Source: DASH / HTTPS stream (YouTube)")
+        lines.append("")
+        if let probe = await ffprobeSpecs(videoPath: videoPath) {
+            lines.append("Resolution: \(probe.width)x\(probe.height)")
+            lines.append("")
+            lines.append("Video:")
+            lines.append("  Codec: \(probe.videoCodec)" + (qualityLabel.map { " — \($0)" } ?? ""))
+            lines.append("  Measured bitrate: \(probe.videoKbps) kb/s (measured directly from the "
+                + "file, not just YouTube's stated rate)")
+            lines.append("")
+            lines.append("Audio:")
+            lines.append("  Codec: \(probe.audioCodec)")
+            lines.append("  Measured bitrate: \(probe.audioKbps) kb/s")
+            lines.append("  Channels: \(probe.channels)")
+            lines.append("  Sample rate: \(probe.sampleRate) Hz")
+            lines.append("")
+            lines.append("File size: \(probe.fileSizeText) (\(probe.fileSizeBytes) bytes)")
+            lines.append("Measured overall bitrate: \(probe.videoKbps + probe.audioKbps) kb/s")
+            lines.append("Duration: \(probe.durationText)")
+        } else {
+            lines.append("(ffprobe not found — technical specs unavailable. yt-dlp's own stated "
+                + "format details are in the accompanying .ytdlp.log.)")
+        }
+        lines.append("")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("QUALITY CONFIRMATION")
+        lines.append(String(repeating: "-", count: 40))
+        switch qualityConfirmed {
+        case true:
+            lines.append("Confirmed best available: this matches the highest real ceiling "
+                + "YouTube offered for this video at download time.")
+        case false:
+            lines.append("⚠️ Got \(achieved ?? 0)p, but \(expectedHeight ?? 0)p was actually "
+                + "available — see the .ytdlp.log for the full format list.")
+        case nil:
+            lines.append("Not evaluated (no real format list to compare against).")
+        }
+        lines.append("")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("NOTES")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("- Downloaded and verified automatically by Reprise.")
+        lines.append("- See the accompanying .ytdlp.log for the full format list and download transcript.")
+        lines.append("- For personal archival use only; not for distribution.")
+        try? lines.joined(separator: "\n").write(
+            to: dir.appendingPathComponent(base + ".archive-info.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// yt-dlp's upload_date is a bare "YYYYMMDD" string — turned into something
+    /// readable ("13 June 2026") for the archive document rather than shown raw.
+    private func formattedUploadDate(_ raw: String?) -> String? {
+        guard let raw, raw.count == 8 else { return nil }
+        let inFormat = DateFormatter()
+        inFormat.dateFormat = "yyyyMMdd"
+        inFormat.locale = Locale(identifier: "en_US_POSIX")
+        guard let date = inFormat.date(from: raw) else { return nil }
+        let outFormat = DateFormatter()
+        outFormat.dateFormat = "d MMMM yyyy"
+        outFormat.locale = Locale(identifier: "en_US")
+        return outFormat.string(from: date)
+    }
+
+    private struct FFProbeSpecs {
+        let width: Int
+        let height: Int
+        let videoCodec: String
+        let audioCodec: String
+        let channels: Int
+        let sampleRate: Int
+        let videoKbps: Int
+        let audioKbps: Int
+        let durationText: String
+        let fileSizeText: String
+        let fileSizeBytes: Int64
+    }
+
+    /// Real, measured specs from the actual downloaded file — not yt-dlp's stated
+    /// format details, which can differ from what was actually achieved (same
+    /// reasoning as expectedMaxHeight/achievedHeight elsewhere in this file).
+    /// Sums every packet's size for video and audio separately to get a genuine
+    /// average bitrate, the same manual methodology used earlier this session to
+    /// double-check a download by hand — just automated here.
+    private func ffprobeSpecs(videoPath: String) async -> FFProbeSpecs? {
+        guard let ffprobePath else { return nil }
+        async let videoInfo = runProcess(ffprobePath, [
+            "-v", "quiet", "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,width,height",
+            "-of", "default=noprint_wrappers=1", videoPath])
+        async let audioInfo = runProcess(ffprobePath, [
+            "-v", "quiet", "-select_streams", "a:0",
+            "-show_entries", "stream=codec_name,sample_rate,channels",
+            "-of", "default=noprint_wrappers=1", videoPath])
+        async let durationInfo = runProcess(ffprobePath, [
+            "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath])
+        async let videoPacketSizes = runProcess(ffprobePath, [
+            "-v", "quiet", "-select_streams", "v:0",
+            "-show_entries", "packet=size", "-of", "csv=p=0", videoPath])
+        async let audioPacketSizes = runProcess(ffprobePath, [
+            "-v", "quiet", "-select_streams", "a:0",
+            "-show_entries", "packet=size", "-of", "csv=p=0", videoPath])
+
+        func field(_ output: String, _ key: String) -> String? {
+            output.split(separator: "\n").first { $0.hasPrefix("\(key)=") }
+                .map { String($0.dropFirst(key.count + 1)) }
+        }
+        func sumPacketBytes(_ output: String) -> Int64 {
+            output.split(separator: "\n").reduce(Int64(0)) { total, line in
+                let digits = line.filter { $0.isNumber }
+                return total + (Int64(digits) ?? 0)
+            }
+        }
+
+        let (_, videoOut, _) = await videoInfo
+        let (_, audioOut, _) = await audioInfo
+        let (_, durationOut, _) = await durationInfo
+        let (_, videoSizesOut, _) = await videoPacketSizes
+        let (_, audioSizesOut, _) = await audioPacketSizes
+
+        guard let width = field(videoOut, "width").flatMap(Int.init),
+              let height = field(videoOut, "height").flatMap(Int.init),
+              let duration = Double(durationOut.trimmingCharacters(in: .whitespacesAndNewlines)),
+              duration > 0,
+              let fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: videoPath))?[.size] as? Int64
+        else { return nil }
+
+        let videoBytes = sumPacketBytes(videoSizesOut)
+        let audioBytes = sumPacketBytes(audioSizesOut)
+        let videoKbps = Int((Double(videoBytes) * 8 / duration) / 1000)
+        let audioKbps = Int((Double(audioBytes) * 8 / duration) / 1000)
+
+        let h = Int(duration) / 3600, m = (Int(duration) % 3600) / 60, s = Int(duration) % 60
+        let durationText = h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+        let fileSizeGiB = Double(fileSizeBytes) / 1024 / 1024 / 1024
+
+        return FFProbeSpecs(
+            width: width, height: height,
+            videoCodec: field(videoOut, "codec_name") ?? "unknown",
+            audioCodec: field(audioOut, "codec_name") ?? "unknown",
+            channels: field(audioOut, "channels").flatMap(Int.init) ?? 0,
+            sampleRate: field(audioOut, "sample_rate").flatMap(Int.init) ?? 0,
+            videoKbps: videoKbps, audioKbps: audioKbps,
+            durationText: durationText,
+            fileSizeText: String(format: "%.2f GiB", fileSizeGiB),
+            fileSizeBytes: fileSizeBytes)
     }
 
     /// yt-dlp's standard chapter shape: a list of {start_time, title} (seconds, string).
@@ -2292,7 +2541,7 @@ final class MonitorEngine: ObservableObject {
                 // effort, after the primary file already landed: never holds up or
                 // affects the primary download's own success/notification above.
                 if (v.quality ?? .best) == .premium, v.downloadAltPremiumCodec == true {
-                    await downloadAlternatePremiumCodec(url: v.url, label: v.label, videoId: v.id, meta: meta, primaryFormatId: formatId)
+                    await downloadAlternatePremiumCodec(url: v.url, label: v.label, videoId: v.id, meta: meta, primaryFormatId: formatId, primaryVideoPath: path)
                 }
             } else {
                 notifyFailureThrottled(videoId: v.id, title: "VOD download failed", message: "\(v.label) — check the log on the Mac Mini.")
