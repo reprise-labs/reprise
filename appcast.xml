@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.58</title>
+            <sparkle:version>1.6.58</sparkle:version>
+            <sparkle:shortVersionString>1.6.58</sparkle:shortVersionString>
+            <description><![CDATA[When the alt-codec download succeeds, both files now share one combined archive-info.txt (same show, same source) instead of two near-duplicate documents.]]></description>
+            <pubDate>Sat, 17 Oct 2026 11:21:04 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.58/Reprise.zip" length="4211640" type="application/octet-stream" sparkle:edSignature="ksUUp6PgQrMLfjRV4aLu+3WgLOZGDWmn2rv5RN+xUsgv1rrMMsIK6aJrzI0Kh/7mXfvbVTvlIZqIBDDiBZd0Cg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.57</title>
             <sparkle:version>1.6.57</sparkle:version>
             <sparkle:shortVersionString>1.6.57</sparkle:shortVersionString>
