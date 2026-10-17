@@ -1783,7 +1783,18 @@ final class MonitorEngine: ObservableObject {
                 dir: geredDir, base: geredBase, url: url, meta: meta, tag: tag,
                 formatId: nil, qualityLabel: nil, videoPath: gered,
                 expectedHeight: nil, achieved: nil, qualityConfirmed: nil)
-            try? (formatsSection + transcript).write(
+            // No clean format_id from yt-dlp itself on this path (see above) — but the
+            // real file is right there, so its actual resolution/codec can be matched
+            // back against the same format list to figure out which row it almost
+            // certainly was, same forensic approach already used by hand earlier this
+            // session to double-check a download's quality. Explicitly labeled
+            // "inferred" rather than presented as a confirmed yt-dlp result, since it's
+            // a match on resolution+codec family, not a guarantee of the exact id.
+            let inferredId = await inferDownloadedFormatId(meta: meta, videoPath: gered)
+            let geredFormatsSection = "===== Available formats (yt-dlp -F equivalent, from the same pre-download metadata fetch) =====\n"
+                + formatTable(meta: meta, downloadedFormatId: inferredId) + "\n\n"
+            let geredHeader = inferredId.map { "===== DOWNLOADED (inferred from the saved file's actual resolution/codec — no clean yt-dlp confirmation on this recovery path) =====\n\($0)\n\n" } ?? ""
+            try? (geredHeader + geredFormatsSection + transcript).write(
                 to: geredDir.appendingPathComponent(geredBase + ".ytdlp.log"),
                 atomically: true, encoding: .utf8)
             return (true, gered, nil, nil, nil)
@@ -2298,6 +2309,43 @@ final class MonitorEngine: ObservableObject {
             durationText: durationText,
             fileSizeText: String(format: "%.2f GiB", fileSizeGiB),
             fileSizeBytes: fileSizeBytes)
+    }
+
+    /// ffprobe and yt-dlp name the same codecs differently ("h264"/"av1" vs. yt-dlp's
+    /// "avc1"/"av01" format-table prefixes) — maps ffprobe's codec_name to the prefix
+    /// codecFamily() above would produce from a yt-dlp vcodec string, so the two are
+    /// directly comparable. Only the ones that actually differ need an entry; anything
+    /// else (e.g. "vp9") already matches as-is.
+    private func ytdlpCodecFamily(fromFFprobeName name: String) -> String {
+        switch name {
+        case "h264": return "avc1"
+        case "av1": return "av01"
+        default: return name
+        }
+    }
+
+    /// Best-effort reconstruction of which format a successful-but-dirty-exit download
+    /// (see the reddenNaFout branch) actually got, for when yt-dlp's own clean
+    /// after-download format print never fired. Matches the real file's measured
+    /// resolution and codec family back against the same pre-download format list —
+    /// the same forensic approach already used by hand earlier this session to
+    /// double-check a download's quality — rather than a confirmed yt-dlp result.
+    /// Prefers a combined (video+audio) row since that's what a live capture typically
+    /// used; falls back to any resolution+codec match, or nil if nothing lines up.
+    private func inferDownloadedFormatId(meta: [String: Any], videoPath: String) async -> String? {
+        guard let probe = await ffprobeSpecs(videoPath: videoPath),
+              let formats = meta["formats"] as? [[String: Any]] else { return nil }
+        let targetFamily = ytdlpCodecFamily(fromFFprobeName: probe.videoCodec)
+        let matches = formats.filter { f in
+            guard (f["height"] as? Int) == probe.height,
+                  let family = codecFamily(f["vcodec"] as? String) else { return false }
+            return family == targetFamily
+        }
+        let combined = matches.first { f in
+            guard let acodec = f["acodec"] as? String else { return false }
+            return acodec != "none"
+        }
+        return (combined ?? matches.first)?["format_id"] as? String
     }
 
     /// yt-dlp's standard chapter shape: a list of {start_time, title} (seconds, string).
