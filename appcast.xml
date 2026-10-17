@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.61</title>
+            <sparkle:version>1.6.61</sparkle:version>
+            <sparkle:shortVersionString>1.6.61</sparkle:shortVersionString>
+            <description><![CDATA[The Tracked/Upcoming list now actually grows to show more queued premieres at once (up to ~6 rows) instead of staying cramped at ~3 regardless of how many are tracked.]]></description>
+            <pubDate>Sat, 17 Oct 2026 17:00:02 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.61/Reprise.zip" length="4243328" type="application/octet-stream" sparkle:edSignature="XdRPxOFJtjpLSsH7bA8YA2p/oQ9q5jf1B4aQqsXh/ZX2333tnGVnjb5sJNqIVGAU5fppYeu7tITqCJfvDDd6AQ==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.60</title>
             <sparkle:version>1.6.60</sparkle:version>
             <sparkle:shortVersionString>1.6.60</sparkle:shortVersionString>
