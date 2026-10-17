@@ -1520,17 +1520,20 @@ final class MonitorEngine: ObservableObject {
             // --convert-subs guarantees .srt on disk — the most widely-supported
             // format — regardless of whatever YouTube natively serves (usually vtt).
             //
-            // --sub-langs "en,-live_chat": without it, --write-subs defaults to "en"
-            // when available, but falls back to grabbing *whatever subtitle-like
-            // track exists* when it isn't — on a video originally streamed live,
+            // "nl,en,-live_chat": grabs Dutch AND English subtitles, whichever
+            // actually exist (yt-dlp downloads every language in the list that's
+            // available, not just the first match) — most tracked channels here are
+            // Dutch-language, so Dutch subs are at least as relevant as English when
+            // both exist; renaming below already handles more than one subtitle file.
+            // The "-live_chat" exclusion stays: without it, --write-subs falls back to
+            // grabbing *whatever subtitle-like track exists* when none of the
+            // requested languages are there — on a video originally streamed live,
             // that's the live chat replay, which YouTube exposes as a pseudo-
             // subtitle language literally named "live_chat". Confirmed 17-10-2026 on
             // a real download: it silently produced a 5.8KB .live_chat.json next to
-            // the real subtitle output, which isn't a subtitle at all. "en,-live_chat"
-            // keeps the exact original default (just English, nothing when that
-            // doesn't exist) while excluding that one specific non-subtitle track.
+            // the real subtitle output, which isn't a subtitle at all.
             "--write-subs",
-            "--sub-langs", "en,-live_chat",
+            "--sub-langs", "nl,en,-live_chat",
             "--convert-subs", "srt",
             "-o", outTemplate
         ]
@@ -1989,7 +1992,18 @@ final class MonitorEngine: ObservableObject {
             // silently give up (which would miss a premiere that really is
             // just late), slow way down instead: one heads-up notification,
             // then a check every 30 minutes instead of every 30 seconds.
-            if !v.liveDone && Date().timeIntervalSince(v.scheduledDate) > stillWaitingThreshold {
+            // v.lastChecked only gets set after a real metadata fetch (below) — nil
+            // means this video has never actually been checked yet. Without this
+            // guard, adding an already-published video (scheduledDate far in the
+            // past, e.g. a plain non-premiere upload) fired this exact "still not
+            // live" notification on its very first check, before the real check a
+            // few lines down had any chance to just download it immediately.
+            // Confirmed 17-10-2026 adding the Pinkpop 2012 Anouk video: the
+            // misleading notification went out, then the VOD downloaded fine four
+            // seconds later. Skipping it once here costs nothing — a video that's
+            // genuinely still stalled will hit this same threshold again on its
+            // second check, lastChecked no longer nil, and notify correctly then.
+            if !v.liveDone && v.lastChecked != nil && Date().timeIntervalSince(v.scheduledDate) > stillWaitingThreshold {
                 if v.stillWaitingNotified != true {
                     v.stillWaitingNotified = true
                     writeBack(v, id: videoId)
@@ -2138,6 +2152,7 @@ final class MonitorEngine: ObservableObject {
             v.vodDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .done : .vodPending
+            if ok { v.qualityConfirmed = qualityConfirmed }
             if ok {
                 // "vod" is reachable two ways: after a successful LIVE capture (v.liveDone
                 // true), or directly — e.g. the live window was missed entirely (a permission
@@ -2269,11 +2284,32 @@ final class MonitorEngine: ObservableObject {
         checkExternalTools()
 
         guard !videos.isEmpty else { return }
-        for index in videos.indices {
-            await checkReadinessMilestones(index: index)
-            await checkOneVideo(index: index)
+        // Used to be a plain sequential `for index in videos.indices { await ... }` —
+        // which meant a single multi-GB download (an `await` that can run for many
+        // minutes, see downloadVideo) blocked this entire loop from ever reaching the
+        // next video, even though MainActor was otherwise free to interleave it.
+        // Two premieres going live close together would have had the second one
+        // miss its live window entirely, stuck waiting behind the first one's
+        // download. A TaskGroup gives every video its own child task that
+        // independently reaches its own `await` points instead; checkingNow (keyed
+        // per video id) still prevents a video from being checked twice at once, and
+        // writeBack already resolves by id rather than a captured index, so this is
+        // safe even if the list changes (an add/delete) while checks are in flight.
+        await withTaskGroup(of: Void.self) { group in
+            for id in videos.map(\.id) {
+                group.addTask { @MainActor [weak self] in
+                    await self?.checkOneVideoTick(id: id)
+                }
+            }
         }
         Store.save(videos)
+    }
+
+    private func checkOneVideoTick(id: UUID) async {
+        guard let idx = videos.firstIndex(where: { $0.id == id }) else { return }
+        await checkReadinessMilestones(index: idx)
+        guard let idx2 = videos.firstIndex(where: { $0.id == id }) else { return }
+        await checkOneVideo(index: idx2)
     }
 }
 

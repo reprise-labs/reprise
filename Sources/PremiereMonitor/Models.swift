@@ -155,6 +155,12 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     var vodNotified: Bool? = nil
     /// nil = .best, for the same decode-compatibility reason as the flags above.
     var quality: VideoQuality? = nil
+    /// Result of the expectedMaxHeight/achievedHeight comparison from the download
+    /// that finished this VOD — persisted (not just logged/notified) so the Tracked
+    /// list can show the same "confirmed best available" proof without the user
+    /// having to dig into the log. nil means nothing to compare (no real ceiling
+    /// known for this video), not an unverified assumption either way.
+    var qualityConfirmed: Bool? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
 

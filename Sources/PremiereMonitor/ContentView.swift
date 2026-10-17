@@ -416,6 +416,18 @@ struct VideoRow: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+                // Same proof shown in the push notification/log, now visible without
+                // digging into either — only shown once the VOD is actually done, and
+                // only when there was something real to compare against (nil means no
+                // ceiling was known for this video, not a silent "assume it's fine").
+                if video.status == .done, let confirmed = video.qualityConfirmed {
+                    HStack(spacing: 3) {
+                        Image(systemName: confirmed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        Text(confirmed ? "Confirmed best available" : "Lower than available")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(confirmed ? AnyShapeStyle(Color.green) : AnyShapeStyle(Color.orange))
+                }
                 if video.status == .waiting {
                     // SwiftUI's built-in relative style ticks down on its own — no timer needed.
                     Text("in \(video.scheduledDate, style: .relative)")
