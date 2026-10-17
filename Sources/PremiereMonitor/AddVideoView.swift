@@ -15,6 +15,7 @@ struct AddVideoView: View {
     @State private var label: String
     @State private var scheduledDate: Date
     @State private var quality: VideoQuality
+    @State private var downloadAltPremiumCodec: Bool
 
     @State private var isLookingUp: Bool = false
     @State private var lookupMessage: String?
@@ -33,6 +34,7 @@ struct AddVideoView: View {
         _label = State(initialValue: video?.label ?? "")
         _scheduledDate = State(initialValue: video?.scheduledDate ?? Date().addingTimeInterval(3600))
         _quality = State(initialValue: video?.quality ?? MonitorEngine.shared.settings.defaultQualityResolved)
+        _downloadAltPremiumCodec = State(initialValue: video?.downloadAltPremiumCodec ?? false)
     }
 
     /// URL and title are already known from channel discovery; scheduled time isn't
@@ -47,6 +49,7 @@ struct AddVideoView: View {
         _label = State(initialValue: discovered.title)
         _scheduledDate = State(initialValue: Date().addingTimeInterval(3600))
         _quality = State(initialValue: MonitorEngine.shared.settings.defaultQualityResolved)
+        _downloadAltPremiumCodec = State(initialValue: false)
     }
 
     private var isEditing: Bool { editingId != nil }
@@ -142,6 +145,18 @@ struct AddVideoView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 360, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    // Rare on purpose (see MonitoredVideo.downloadAltPremiumCodec): most
+                    // videos don't have a second Premium codec at all, so this stays an
+                    // opt-in per video rather than something every Premium download does.
+                    Toggle("Also download the alternate Premium codec, if YouTube offers one", isOn: $downloadAltPremiumCodec)
+                        .font(.caption)
+                        .toggleStyle(.checkbox)
+                    Text("Some videos have Premium in two different codecs (e.g. both VP9 and AV1). Downloads both as separate files when that's the case — otherwise does nothing extra.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 360, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -154,9 +169,9 @@ struct AddVideoView: View {
                 Button(isEditing ? "Save" : "Add") {
                     let succeeded: Bool
                     if let editingId {
-                        succeeded = engine.updateVideo(id: editingId, url: url, label: label, scheduledDate: scheduledDate, quality: quality)
+                        succeeded = engine.updateVideo(id: editingId, url: url, label: label, scheduledDate: scheduledDate, quality: quality, downloadAltPremiumCodec: downloadAltPremiumCodec)
                     } else {
-                        succeeded = engine.addVideo(url: url, label: label, scheduledDate: scheduledDate, quality: quality)
+                        succeeded = engine.addVideo(url: url, label: label, scheduledDate: scheduledDate, quality: quality, downloadAltPremiumCodec: downloadAltPremiumCodec)
                     }
                     if succeeded {
                         if let discoveredVideoId {
