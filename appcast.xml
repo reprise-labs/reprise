@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.56</title>
+            <sparkle:version>1.6.56</sparkle:version>
+            <sparkle:shortVersionString>1.6.56</sparkle:shortVersionString>
+            <description><![CDATA[Optional per-video toggle: if YouTube offers Premium in two different video codecs for a video, downloads both as separate files (primary + ALT), each with their own full set of sidecar files.]]></description>
+            <pubDate>Sat, 17 Oct 2026 10:43:58 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.56/Reprise.zip" length="4165297" type="application/octet-stream" sparkle:edSignature="YjmihoJLq1i5exoVOltP61ABGQKVmQBiNPZ1d744vEXeGdxuRAnzJxv8/eZWUe/ccnqVS5cc+aMoXMLJHIGQCg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.55</title>
             <sparkle:version>1.6.55</sparkle:version>
             <sparkle:shortVersionString>1.6.55</sparkle:shortVersionString>
