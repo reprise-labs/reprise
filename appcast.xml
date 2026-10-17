@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.54</title>
+            <sparkle:version>1.6.54</sparkle:version>
+            <sparkle:shortVersionString>1.6.54</sparkle:shortVersionString>
+            <description><![CDATA[Parallel downloads (two premieres no longer block each other), a confirmed-best-quality badge visible right in the Tracked list, Dutch+English subtitles, and a fix for a false 'still not live' notification on already-published videos.]]></description>
+            <pubDate>Sat, 17 Oct 2026 06:03:55 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.54/Reprise.zip" length="4137645" type="application/octet-stream" sparkle:edSignature="1ynW4IwD5VzQuPsCpuNH8pY3lcr2YYrFEIYl+IN56Q6teeUrKYTh/U9OU733mum/a7bzw7G5u8KF4rYGUreCBg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.53</title>
             <sparkle:version>1.6.53</sparkle:version>
             <sparkle:shortVersionString>1.6.53</sparkle:shortVersionString>
