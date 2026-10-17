@@ -1458,7 +1458,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality, meta: [String: Any]) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality, meta: [String: Any]) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?, qualityConfirmed: Bool?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1687,8 +1687,24 @@ final class MonitorEngine: ObservableObject {
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
                 try? transcript.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
             }
-            log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate)")
-            return (true, finalPath, capturedFormatId, capturedQualityLabel)
+            // Whether what actually landed matches the real ceiling for this exact
+            // video — not just "the selector didn't error" (same gap that let the
+            // "bv" vs "bv*" regression go unnoticed for a while). nil means there
+            // was nothing real to compare against (e.g. no format list at all),
+            // which stays silent rather than claiming either confirmed or not.
+            let expectedHeight = expectedMaxHeight(meta: meta, quality: quality)
+            let achieved = achievedHeight(fromQualityLabel: capturedQualityLabel)
+            let qualityConfirmed: Bool? = (expectedHeight != nil && achieved != nil) ? (achieved! >= expectedHeight!) : nil
+            switch qualityConfirmed {
+            case true:
+                log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate) ✅ confirmed best available for this video")
+            case false:
+                log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate) ⚠️ got \(achieved ?? 0)p, "
+                    + "but \(expectedHeight ?? 0)p was actually available — check the .ytdlp.log")
+            case nil:
+                log("[\(label)] Download complete (\(tag)) → \(finalPath ?? outTemplate)")
+            }
+            return (true, finalPath, capturedFormatId, capturedQualityLabel, qualityConfirmed)
         }
 
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
@@ -1705,7 +1721,7 @@ final class MonitorEngine: ObservableObject {
             let geredBase = geredURL.deletingPathExtension().lastPathComponent
             try? transcript.write(to: geredURL.deletingLastPathComponent().appendingPathComponent(geredBase + ".ytdlp.log"),
                                    atomically: true, encoding: .utf8)
-            return (true, gered, nil, nil)
+            return (true, gered, nil, nil, nil)
         }
 
         log("[\(label)] Download failed (\(tag), rc=\(rc)): \(tail(err, lines: 12))")
@@ -1725,7 +1741,7 @@ final class MonitorEngine: ObservableObject {
         faalFormatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         let failedLogName = "\(veiligLabel) [\(tag)] — FAILED \(faalFormatter.string(from: Date())).ytdlp.log"
         try? transcript.write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
-        return (false, nil, nil, nil)
+        return (false, nil, nil, nil, nil)
     }
 
     /// Turns yt-dlp's raw %(format_note)s (e.g. "1080p Premium+medium" for a
@@ -1735,6 +1751,41 @@ final class MonitorEngine: ObservableObject {
     private func qualityLabel(fromFormatNote note: String?) -> String? {
         guard let note, !note.isEmpty else { return nil }
         return note.split(separator: "+", maxSplits: 1).first.map(String.init)
+    }
+
+    /// The real height actually achievable for this quality choice, on this exact
+    /// video — read straight off the same real format list availableQualities()
+    /// uses, so it's already resolved by the time a download starts (no extra
+    /// network request). Scoped to the same codec the real selector targets (avc1,
+    /// plus any Premium-tagged track specifically for .premium — see
+    /// VideoQuality.formatFilter) so this never flags .premium falling back to
+    /// .best's result on a video without one as if that were a shortfall: when no
+    /// Premium track exists, this returns exactly the same ceiling .best would.
+    private func expectedMaxHeight(meta: [String: Any], quality: VideoQuality) -> Int? {
+        guard let formats = meta["formats"] as? [[String: Any]], !formats.isEmpty else { return nil }
+        var candidates = formats.compactMap { f -> Int? in
+            guard let vcodec = f["vcodec"] as? String, vcodec.hasPrefix("avc1"),
+                  (f["acodec"] as? String) == "none" else { return nil }
+            return f["height"] as? Int
+        }
+        if quality == .premium {
+            candidates += formats.compactMap { f -> Int? in
+                guard let note = f["format_note"] as? String, note.localizedCaseInsensitiveContains("Premium"),
+                      (f["acodec"] as? String) == "none" else { return nil }
+                return f["height"] as? Int
+            }
+        }
+        guard let maxHeight = candidates.max() else { return nil }
+        return quality.heightCap.map { min($0, maxHeight) } ?? maxHeight
+    }
+
+    /// The height actually captured, parsed straight off the already-verified
+    /// qualityLabel (e.g. "1080p Premium" → 1080) — reuses data already proven
+    /// reliable for the push notification/filename, rather than trusting a new,
+    /// unverified yt-dlp template field for the same thing.
+    private func achievedHeight(fromQualityLabel label: String?) -> Int? {
+        guard let label, let match = label.range(of: "^\\d+", options: .regularExpression) else { return nil }
+        return Int(label[match])
     }
 
     /// Writes "<base>.txt" next to the downloaded video with its description and
@@ -1961,7 +2012,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingLive
             writeBack(v, id: videoId)
-            let (ok, path, _, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best, meta: meta)
+            let (ok, path, _, _, _) = await downloadVideo(url: v.url, label: v.label, tag: "LIVE", isLive: true, videoId: v.id, quality: v.quality ?? .best, meta: meta)
             v.liveDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .vodPending : .waiting
@@ -2009,7 +2060,7 @@ final class MonitorEngine: ObservableObject {
             }
             v.status = .downloadingVod
             writeBack(v, id: videoId)
-            let (ok, path, formatId, qualityLabel) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best, meta: meta)
+            let (ok, path, formatId, qualityLabel, qualityConfirmed) = await downloadVideo(url: v.url, label: v.label, tag: "VOD", isLive: false, videoId: v.id, quality: v.quality ?? .best, meta: meta)
             // Confirmed 10-10-2026 (Tiësto, Pinkpop 2004): heeftAdaptieveFormaten()
             // above checks whether the *format list* mentions high-quality tracks,
             // but that list can say yes before those tracks are actually fetchable
@@ -2046,10 +2097,22 @@ final class MonitorEngine: ObservableObject {
                 // what quality was *requested* — so a Premium pick that silently fell
                 // back to Best available is reflected honestly here, not overclaimed.
                 let kwaliteit = qualityLabel.map { " [\($0)]" } ?? ""
+                // The visible proof the user asked for (16-10-2026): not just "here's
+                // the quality label", but an explicit check against the real ceiling
+                // for this video, computed before the download even started (see
+                // expectedMaxHeight). true/false only ever come from an actual
+                // comparison; nil (nothing shown) means there was nothing real to
+                // compare against, not a silent assumption either way.
+                let bevestiging: String
+                switch qualityConfirmed {
+                case true: bevestiging = " ✅ confirmed best available"
+                case false: bevestiging = " ⚠️ lower than what's actually available — check the log"
+                case nil: bevestiging = ""
+                }
                 if v.liveDone {
-                    notify(title: "Premiere captured!", message: "\(v.label) — both LIVE and VOD have been downloaded\(kwaliteit).")
+                    notify(title: "Premiere captured!", message: "\(v.label) — both LIVE and VOD have been downloaded\(kwaliteit)\(bevestiging).")
                 } else {
-                    notify(title: "VOD downloaded", message: "\(v.label) — VOD saved\(kwaliteit). The live broadcast wasn't "
+                    notify(title: "VOD downloaded", message: "\(v.label) — VOD saved\(kwaliteit)\(bevestiging). The live broadcast wasn't "
                         + "captured separately (the live window was likely missed).")
                 }
             } else {
