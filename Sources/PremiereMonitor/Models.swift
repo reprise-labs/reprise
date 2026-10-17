@@ -161,6 +161,18 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     /// having to dig into the log. nil means nothing to compare (no real ceiling
     /// known for this video), not an unverified assumption either way.
     var qualityConfirmed: Bool? = nil
+    /// Opt-in, per video: when quality is .premium and YouTube happens to offer
+    /// Premium in more than one video codec for this exact video (confirmed
+    /// 17-10-2026: some Pinkpop Archive uploads have both a VP9-Premium and an
+    /// AV1-Premium track, yt-dlp's tiebreak picks one more or less arbitrarily),
+    /// also downloads whichever Premium-tagged codec *wasn't* picked, as a second
+    /// file alongside the first — tagged "VOD ALT" so it gets its own full set of
+    /// sidecar files (thumbnail/info/subtitles/.ytdlp.log), the log being the
+    /// existing, already-bolded "what is what" explanation rather than a new one.
+    /// Off by default: most videos don't have a second Premium codec at all, and
+    /// downloading a second multi-GB file "just in case" on every premiere would
+    /// be a wasteful default for a rare, often visually unnoticeable difference.
+    var downloadAltPremiumCodec: Bool? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
 

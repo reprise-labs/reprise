@@ -555,14 +555,15 @@ final class MonitorEngine: ObservableObject {
 
     /// Adds a premiere. Returns false (and adds nothing) if the URL is already in the list.
     @discardableResult
-    func addVideo(url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best) -> Bool {
+    func addVideo(url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best, downloadAltPremiumCodec: Bool = false) -> Bool {
         let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if videos.contains(where: { $0.url.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedUrl }) {
             log("Not added (already in the list): \(trimmedUrl)")
             return false
         }
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        let v = MonitoredVideo(url: trimmedUrl, label: trimmedLabel.isEmpty ? trimmedUrl : trimmedLabel, scheduledDate: scheduledDate, quality: quality)
+        var v = MonitoredVideo(url: trimmedUrl, label: trimmedLabel.isEmpty ? trimmedUrl : trimmedLabel, scheduledDate: scheduledDate, quality: quality)
+        v.downloadAltPremiumCodec = downloadAltPremiumCodec
         videos.append(v)
         Store.save(videos)
         log("Added: \(v.label)")
@@ -711,7 +712,7 @@ final class MonitorEngine: ObservableObject {
     /// Updates an existing premiere's URL/label/scheduled time. Returns false (and changes
     /// nothing) if the new URL matches a *different* premiere already in the list.
     @discardableResult
-    func updateVideo(id: UUID, url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best) -> Bool {
+    func updateVideo(id: UUID, url: String, label: String, scheduledDate: Date, quality: VideoQuality = .best, downloadAltPremiumCodec: Bool = false) -> Bool {
         guard let index = videos.firstIndex(where: { $0.id == id }) else { return false }
         let trimmedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if videos.contains(where: { $0.id != id && $0.url.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedUrl }) {
@@ -721,6 +722,7 @@ final class MonitorEngine: ObservableObject {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         var v = videos[index]
         v.quality = quality
+        v.downloadAltPremiumCodec = downloadAltPremiumCodec
 
         // Without these resets: (1) editing a "Done" premiere's URL to point at a different
         // video left it stuck showing "Done" forever — checkOneVideo's very first line
@@ -1458,7 +1460,7 @@ final class MonitorEngine: ObservableObject {
         log("Download(s) finished — no longer preventing sleep.")
     }
 
-    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality, meta: [String: Any]) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?, qualityConfirmed: Bool?) {
+    private func downloadVideo(url: String, label: String, tag: String, isLive: Bool, videoId: UUID, quality: VideoQuality, meta: [String: Any], formatFilterOverride: String? = nil) async -> (ok: Bool, path: String?, formatId: String?, qualityLabel: String?, qualityConfirmed: Bool?) {
         preventSleepIfNeeded()
         defer { allowSleepIfIdle() }
 
@@ -1474,7 +1476,7 @@ final class MonitorEngine: ObservableObject {
         var args = [
             "--force-ipv4",
             "-S", "codec:h264,res",
-            "-f", quality.formatFilter,
+            "-f", formatFilterOverride ?? quality.formatFilter,
             "--merge-output-format", "mkv",
             "--no-warnings",
             "--no-overwrites",
@@ -1781,6 +1783,86 @@ final class MonitorEngine: ObservableObject {
         try? (formatsSection + transcript).write(to: downloadRoot.appendingPathComponent(failedLogName), atomically: true, encoding: .utf8)
         return (false, nil, nil, nil, nil)
     }
+
+    /// When quality is .premium and the user opted into downloadAltPremiumCodec on
+    /// this video (see that field), checks whether YouTube actually offers Premium
+    /// in a second, different video codec for this exact video — confirmed
+    /// 17-10-2026: some Pinkpop Archive uploads have both a VP9-Premium and an
+    /// AV1-Premium track, and the primary download's own selector only ever picks
+    /// one of the two (not necessarily the smaller/more efficient one). If a real
+    /// alternate exists, downloads it too as a separate "VOD ALT" file, which goes
+    /// through the exact same pipeline as any other download — its own thumbnail/
+    /// info/subtitles/.ytdlp.log, the log being the existing, already-bolded
+    /// "which row did we get" answer rather than a new explanation format.
+    /// Fire-and-forget: runs after the primary file already succeeded, and a
+    /// failure here is only logged — it never touches the primary download's own
+    /// success/failure or notification.
+    private func downloadAlternatePremiumCodec(url: String, label: String, videoId: UUID, meta: [String: Any], primaryFormatId: String?) async {
+        guard let formats = meta["formats"] as? [[String: Any]] else { return }
+        // The primary download's video-only component (before the "+audio" half) —
+        // nothing to compare against without it (e.g. it fell back to a single
+        // combined noodformaat, which never has a "+", same check used elsewhere).
+        guard let primaryFormatId, let primaryVideoId = primaryFormatId.split(separator: "+").first.map(String.init) else { return }
+        guard let primaryFormat = formats.first(where: { ($0["format_id"] as? String) == primaryVideoId }),
+              let primaryFamily = codecFamily(primaryFormat["vcodec"] as? String) else { return }
+
+        // Compares by codec *family* (e.g. "av01", not the full "av01.0.08M.08"
+        // profile string, and folding YouTube's two different names for the same
+        // VP9 codec — bare "vp9" on webm formats, "vp09.xx.xx.xx" on mp4-dash ones,
+        // see codecFamily) — two Premium tracks in the same family are just
+        // different resolutions/bitrates of the same codec, not a real A/B choice.
+        let altFamilies = Set(formats.compactMap { f -> String? in
+            guard let note = f["format_note"] as? String, note.localizedCaseInsensitiveContains("Premium"),
+                  (f["acodec"] as? String) == "none",
+                  let family = codecFamily(f["vcodec"] as? String), family != primaryFamily else { return nil }
+            return family
+        })
+        guard !altFamilies.isEmpty else {
+            log("[\(label)] Alternate Premium codec requested, but YouTube only offers one Premium codec for this video — nothing extra to download.")
+            return
+        }
+        // Deliberately not a specific format_id pulled from this (by now
+        // potentially minutes-old) meta snapshot: confirmed 17-10-2026 that YouTube
+        // can hand back a *different* numeric format_id for the same video's
+        // Premium track between separate yt-dlp invocations mere seconds apart —
+        // the primary download's own run got "356", an id pulled from meta here
+        // ("721") no longer resolved by the time this second, independent yt-dlp
+        // process ran its own fresh extraction ("Requested format is not
+        // available") — a third fresh check moments later returned "616" instead.
+        // Same instability already noted elsewhere in this file re: the
+        // SABR-streaming rollout. An explicit per-family `^=` (starts-with) chain,
+        // re-resolved fresh by this invocation itself, is robust to that id churn —
+        // only the numeric id was ever unstable, not which codec families exist.
+        // codecRawPrefixes below expands "vp9" to both its real yt-dlp spellings.
+        let altFilter = altFamilies
+            .flatMap { codecRawPrefixes[$0] ?? [$0] }
+            .map { "bv[format_note*=Premium][vcodec^=\($0)]+ba" }
+            .joined(separator: "/")
+        log("[\(label)] Also downloading the alternate Premium codec (not \(primaryFamily)) alongside the primary file.")
+        let (ok, path, _, _, _) = await downloadVideo(
+            url: url, label: label, tag: "VOD ALT", isLive: false, videoId: videoId,
+            quality: .premium, meta: meta, formatFilterOverride: altFilter)
+        if ok {
+            log("[\(label)] Alternate Premium codec download complete → \(path ?? "?")")
+        } else {
+            log("[\(label)] Alternate Premium codec download failed — YouTube may not be offering that codec right now (format availability can shift between requests). Primary file is unaffected.")
+        }
+    }
+
+    /// Canonical codec family name from a raw yt-dlp vcodec string (e.g.
+    /// "av01.0.08M.08" → "av01") — folds VP9's two different spellings ("vp9" on
+    /// webm formats, "vp09.xx.xx.xx" on mp4-dash ones, confirmed 17-10-2026 by a
+    /// failed exclusion filter that silently let a "vp09..." format through a
+    /// `!*=vp9` check) into one name, so codec comparisons don't miss a match
+    /// purely because of which container happened to carry that encode.
+    private func codecFamily(_ vcodec: String?) -> String? {
+        guard let base = vcodec?.split(separator: ".").first.map(String.init) else { return nil }
+        return base == "vp09" ? "vp9" : base
+    }
+
+    /// Raw yt-dlp vcodec prefixes to actually try in a `-f` selector for a given
+    /// codecFamily() name — only "vp9" needs more than one, see codecFamily.
+    private let codecRawPrefixes: [String: [String]] = ["vp9": ["vp09", "vp9"]]
 
     /// Turns yt-dlp's raw %(format_note)s (e.g. "1080p Premium+medium" for a
     /// merged video+audio pair) into just the human-readable video-quality part
@@ -2205,6 +2287,12 @@ final class MonitorEngine: ObservableObject {
                 } else {
                     notify(title: "VOD downloaded", message: "\(v.label) — VOD saved\(kwaliteit)\(bevestiging). The live broadcast wasn't "
                         + "captured separately (the live window was likely missed).")
+                }
+                // Opt-in per video (see MonitoredVideo.downloadAltPremiumCodec) — best
+                // effort, after the primary file already landed: never holds up or
+                // affects the primary download's own success/notification above.
+                if (v.quality ?? .best) == .premium, v.downloadAltPremiumCodec == true {
+                    await downloadAlternatePremiumCodec(url: v.url, label: v.label, videoId: v.id, meta: meta, primaryFormatId: formatId)
                 }
             } else {
                 notifyFailureThrottled(videoId: v.id, title: "VOD download failed", message: "\(v.label) — check the log on the Mac Mini.")
