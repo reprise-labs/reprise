@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.60</title>
+            <sparkle:version>1.6.60</sparkle:version>
+            <sparkle:shortVersionString>1.6.60</sparkle:shortVersionString>
+            <description><![CDATA[The .ytdlp.log for a LIVE capture now also bolds which format was actually downloaded, even when yt-dlp's own clean confirmation didn't fire — inferred by matching the real file's resolution/codec back against the format list.]]></description>
+            <pubDate>Sat, 17 Oct 2026 16:13:35 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.60/Reprise.zip" length="4236513" type="application/octet-stream" sparkle:edSignature="FC50TmBQuesqbPnw4yqapaB6ZDyf1eBh9FLkfp7Bx6Zcv+ueOpaR7eCiqF395XVOiVdfEJ5zeJqNofWULRIICQ==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.59</title>
             <sparkle:version>1.6.59</sparkle:version>
             <sparkle:shortVersionString>1.6.59</sparkle:shortVersionString>
