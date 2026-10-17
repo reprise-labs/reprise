@@ -1769,9 +1769,22 @@ final class MonitorEngine: ObservableObject {
             // "viel terug op het enkele noodformaat"-vraag is hier sowieso niet
             // aan de orde zoals bij een schone, verse download.
             let geredURL = URL(fileURLWithPath: gered)
+            let geredDir = geredURL.deletingLastPathComponent()
             let geredBase = geredURL.deletingPathExtension().lastPathComponent
+            // LIVE captures almost always land here (yt-dlp commonly exits non-zero
+            // the moment a live stream ends, even though the file itself is fine) —
+            // confirmed 17-10-2026 on the very first real LIVE capture tested this
+            // session: it had no .txt/.archive-info.txt at all, because this branch
+            // never called either writer. No format_id/qualityLabel is known here
+            // (see the comment above), so the archive doc's format/quality-confirmation
+            // sections just read "(unknown)"/"not evaluated" instead of guessing.
+            writeInfoFile(dir: geredDir, base: geredBase, meta: meta)
+            await writeArchiveInfoFile(
+                dir: geredDir, base: geredBase, url: url, meta: meta, tag: tag,
+                formatId: nil, qualityLabel: nil, videoPath: gered,
+                expectedHeight: nil, achieved: nil, qualityConfirmed: nil)
             try? (formatsSection + transcript).write(
-                to: geredURL.deletingLastPathComponent().appendingPathComponent(geredBase + ".ytdlp.log"),
+                to: geredDir.appendingPathComponent(geredBase + ".ytdlp.log"),
                 atomically: true, encoding: .utf8)
             return (true, gered, nil, nil, nil)
         }
