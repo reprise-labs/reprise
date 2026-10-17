@@ -1564,7 +1564,14 @@ final class MonitorEngine: ObservableObject {
         // panel, which stays curated/throttled for readability; this is the full
         // transcript for when that summary isn't enough to see what actually
         // happened, added 16-10-2026 on request.
-        var transcript = ""
+        // Everything yt-dlp -F would show, without a separate -F call — meta already
+        // has the full format list from the fetch checkOneVideo did to decide this
+        // video was ready. Printed up front, before any attempt output, so the
+        // question "what was actually available" and "what did we pick" can both be
+        // answered by this one file. Added 17-10-2026 on request, after a manual
+        // double-check of exactly this kind for a real download.
+        var transcript = "===== Available formats (yt-dlp -F equivalent, from the same pre-download metadata fetch) =====\n"
+            + formatTable(meta: meta) + "\n\n"
         func appendAttempt(_ naam: String, _ out: String, _ err: String) {
             transcript += "===== \(naam) =====\n--- stdout ---\n\(out)\n--- stderr ---\n\(err)\n\n"
         }
@@ -1696,6 +1703,10 @@ final class MonitorEngine: ObservableObject {
                     }
                 }
                 writeInfoFile(dir: dir, base: renamedBase, meta: meta)
+                // The direct answer to "which of the formats listed above did we
+                // actually get" — no need to cross-reference format_id by hand.
+                transcript += "===== DOWNLOADED =====\n\(capturedFormatId ?? "?")"
+                    + (capturedQualityLabel.map { " (\($0))" } ?? "") + "\n"
                 try? transcript.write(to: dir.appendingPathComponent(renamedBase + ".ytdlp.log"), atomically: true, encoding: .utf8)
             }
             // Whether what actually landed matches the real ceiling for this exact
@@ -1797,6 +1808,37 @@ final class MonitorEngine: ObservableObject {
     private func achievedHeight(fromQualityLabel label: String?) -> Int? {
         guard let label, let match = label.range(of: "^\\d+", options: .regularExpression) else { return nil }
         return Int(label[match])
+    }
+
+    /// Same information as "yt-dlp -F", built from the format list already in meta
+    /// instead of a second network round-trip. Sorted by height so the table reads
+    /// top-to-bottom the same way the resolution options do; audio-only and
+    /// storyboard/image entries sort after (nil height) in whatever order they
+    /// arrived in, grouped together at the end rather than interleaved.
+    private func formatTable(meta: [String: Any]) -> String {
+        guard let formats = meta["formats"] as? [[String: Any]], !formats.isEmpty else {
+            return "(no format list available — this video has no real formats yet, e.g. a premiere that hasn't aired)"
+        }
+        let rows = formats.sorted { a, b in
+            ((a["height"] as? Int) ?? -1) > ((b["height"] as? Int) ?? -1)
+        }.map { f -> String in
+            let id = (f["format_id"] as? String) ?? "?"
+            let ext = (f["ext"] as? String) ?? "?"
+            let resolution: String
+            if let w = f["width"] as? Int, let h = f["height"] as? Int {
+                resolution = "\(w)x\(h)"
+            } else {
+                resolution = (f["vcodec"] as? String) == "none" ? "audio only" : "—"
+            }
+            let tbr = (f["tbr"] as? Double) ?? (f["tbr"] as? Int).map(Double.init)
+            let tbrStr = tbr.map { String(format: "%.0fk", $0) } ?? "-"
+            let vcodec = (f["vcodec"] as? String).flatMap { $0 == "none" ? nil : $0 }
+            let acodec = (f["acodec"] as? String).flatMap { $0 == "none" ? nil : $0 }
+            let note = (f["format_note"] as? String).map { " [\($0)]" } ?? ""
+            let codecs = [vcodec, acodec].compactMap { $0 }.joined(separator: "+")
+            return "\(id)\t\(ext)\t\(resolution)\t\(tbrStr)\t\(codecs)\(note)"
+        }
+        return (["id\text\tresolution\ttbr\tcodecs"] + rows).joined(separator: "\n")
     }
 
     /// Writes "<base>.txt" next to the downloaded video with its description and
