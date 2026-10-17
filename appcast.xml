@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.59</title>
+            <sparkle:version>1.6.59</sparkle:version>
+            <sparkle:shortVersionString>1.6.59</sparkle:shortVersionString>
+            <description><![CDATA[LIVE captures now also get the full info/archive-info.txt sidecar files — previously only VOD downloads did, since LIVE almost always exits through a different code path internally.]]></description>
+            <pubDate>Sat, 17 Oct 2026 16:10:56 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.59/Reprise.zip" length="4231848" type="application/octet-stream" sparkle:edSignature="N8T1FXocm8wcI9S8iL0tqpaWANahfJSjsTFAtsu/Qvi2fU8vrX4tIrm3nLDbPRoN7+04uPzigpFWvubJT0asAg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.58</title>
             <sparkle:version>1.6.58</sparkle:version>
             <sparkle:shortVersionString>1.6.58</sparkle:shortVersionString>
