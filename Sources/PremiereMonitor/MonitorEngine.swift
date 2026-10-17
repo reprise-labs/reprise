@@ -1809,7 +1809,7 @@ final class MonitorEngine: ObservableObject {
     /// Fire-and-forget: runs after the primary file already succeeded, and a
     /// failure here is only logged — it never touches the primary download's own
     /// success/failure or notification.
-    private func downloadAlternatePremiumCodec(url: String, label: String, videoId: UUID, meta: [String: Any], primaryFormatId: String?, primaryVideoPath: String?) async {
+    private func downloadAlternatePremiumCodec(url: String, label: String, videoId: UUID, meta: [String: Any], primaryFormatId: String?, primaryQualityLabel: String?, primaryVideoPath: String?) async {
         guard let formats = meta["formats"] as? [[String: Any]] else { return }
         // The primary download's video-only component (before the "+audio" half) —
         // nothing to compare against without it (e.g. it fell back to a single
@@ -1851,46 +1851,80 @@ final class MonitorEngine: ObservableObject {
             .map { "bv[format_note*=Premium][vcodec^=\($0)]+ba" }
             .joined(separator: "/")
         log("[\(label)] Also downloading the alternate Premium codec (not \(primaryFamily)) alongside the primary file.")
-        let (ok, path, _, _, _) = await downloadVideo(
+        let (ok, path, altFormatId, altQualityLabel, _) = await downloadVideo(
             url: url, label: label, tag: "VOD ALT", isLive: false, videoId: videoId,
             quality: .premium, meta: meta, formatFilterOverride: altFilter)
         if ok {
             log("[\(label)] Alternate Premium codec download complete → \(path ?? "?")")
-            // Cross-reference note in both archive-info.txt files — only added once
-            // this second download genuinely succeeded, not assumed in advance, so
-            // the primary's document never points at a file that doesn't exist.
-            crossReferenceArchiveInfo(primaryPath: primaryVideoPath, altPath: path,
-                                       primaryFamily: primaryFamily, altFamilies: altFamilies)
+            // Same show, same source, two codecs — one combined document reads
+            // better than two near-duplicate files that only really differ in the
+            // per-codec specs section (on request 17-10-2026, after shipping the
+            // two-file version first). Only merged once this second download
+            // genuinely succeeded, not assumed in advance.
+            await mergeArchiveInfoFiles(
+                url: url, meta: meta,
+                primaryVideoPath: primaryVideoPath, primaryFormatId: primaryFormatId,
+                primaryQualityLabel: primaryQualityLabel, primaryFamily: primaryFamily,
+                altVideoPath: path, altFormatId: altFormatId,
+                altQualityLabel: altQualityLabel, altFamilies: altFamilies)
         } else {
             log("[\(label)] Alternate Premium codec download failed — YouTube may not be offering that codec right now (format availability can shift between requests). Primary file is unaffected.")
         }
     }
 
-    /// Appends a short note to each file's .archive-info.txt pointing at the other
-    /// — both documents already exist by the time this runs (each written by its
-    /// own downloadVideo call), so this only adds the one thing neither could know
-    /// about itself: that a sibling file exists at all.
-    private func crossReferenceArchiveInfo(primaryPath: String?, altPath: String?, primaryFamily: String, altFamilies: Set<String>) {
-        guard let primaryPath, let altPath else { return }
+    /// Replaces the primary file's standalone archive-info.txt with one combined
+    /// document covering both codecs (shared SOURCE/DOWNLOAD PROCESS, then one
+    /// TECHNICAL SPECIFICATIONS/QUALITY CONFIRMATION section per file), and
+    /// deletes the alt file's now-redundant standalone one — both already exist by
+    /// the time this runs (each written by its own downloadVideo → writeArchiveInfoFile
+    /// call), this just consolidates them into the one the primary file keeps.
+    private func mergeArchiveInfoFiles(
+        url: String, meta: [String: Any],
+        primaryVideoPath: String?, primaryFormatId: String?, primaryQualityLabel: String?, primaryFamily: String,
+        altVideoPath: String?, altFormatId: String?, altQualityLabel: String?, altFamilies: Set<String>
+    ) async {
+        guard let primaryVideoPath, let altVideoPath else { return }
         func archiveInfoURL(for videoPath: String) -> URL {
             let url = URL(fileURLWithPath: videoPath)
             let base = url.deletingPathExtension().lastPathComponent
             return url.deletingLastPathComponent().appendingPathComponent(base + ".archive-info.txt")
         }
-        let primaryName = URL(fileURLWithPath: primaryPath).lastPathComponent
-        let altName = URL(fileURLWithPath: altPath).lastPathComponent
-        let altFamilyList = altFamilies.sorted().joined(separator: ", ")
-        let note = "\n\n" + String(repeating: "-", count: 40) + "\nALTERNATE CODEC\n" + String(repeating: "-", count: 40) + "\n"
-        let primaryNote = note + "YouTube also offers this video's Premium track in \(altFamilyList), "
-            + "downloaded separately as:\n\(altName)"
-        let altNote = note + "This is the alternate-codec (\(altFamilies.sorted().joined(separator: "/"))) "
-            + "download alongside the primary (\(primaryFamily)) file:\n\(primaryName)"
-        if let existing = try? String(contentsOf: archiveInfoURL(for: primaryPath), encoding: .utf8) {
-            try? (existing + primaryNote).write(to: archiveInfoURL(for: primaryPath), atomically: true, encoding: .utf8)
-        }
-        if let existing = try? String(contentsOf: archiveInfoURL(for: altPath), encoding: .utf8) {
-            try? (existing + altNote).write(to: archiveInfoURL(for: altPath), atomically: true, encoding: .utf8)
-        }
+        let altFamily = altFamilies.sorted().joined(separator: "/")
+        let primaryExpected = expectedMaxHeight(meta: meta, quality: .premium)
+        let primaryAchieved = achievedHeight(fromQualityLabel: primaryQualityLabel)
+        let altExpected = expectedMaxHeight(meta: meta, quality: .premium)
+        let altAchieved = achievedHeight(fromQualityLabel: altQualityLabel)
+
+        var lines: [String] = []
+        lines.append("VIDEO ARCHIVE INFO")
+        lines.append("")
+        lines.append("Filenames:")
+        lines.append(URL(fileURLWithPath: primaryVideoPath).lastPathComponent + " (\(primaryFamily))")
+        lines.append(URL(fileURLWithPath: altVideoPath).lastPathComponent + " (\(altFamily))")
+        lines.append("")
+        lines += sourceInfoLines(url: url, meta: meta)
+        lines += downloadProcessIntroLines()
+        lines.append("YouTube offers this video's Premium track in two different codecs; both were "
+            + "downloaded for comparison.")
+        lines.append("")
+        lines += await technicalSpecsBlock(
+            sectionSuffix: " — \(primaryFamily.uppercased()) (primary file)", videoPath: primaryVideoPath,
+            formatId: primaryFormatId, qualityLabel: primaryQualityLabel,
+            expectedHeight: primaryExpected,
+            achieved: primaryAchieved,
+            qualityConfirmed: (primaryExpected != nil && primaryAchieved != nil) ? (primaryAchieved! >= primaryExpected!) : nil)
+        lines.append("")
+        lines += await technicalSpecsBlock(
+            sectionSuffix: " — \(altFamily.uppercased()) (alternate file)", videoPath: altVideoPath,
+            formatId: altFormatId, qualityLabel: altQualityLabel,
+            expectedHeight: altExpected,
+            achieved: altAchieved,
+            qualityConfirmed: (altExpected != nil && altAchieved != nil) ? (altAchieved! >= altExpected!) : nil)
+        lines.append("")
+        lines += archiveNotesLines()
+
+        try? lines.joined(separator: "\n").write(to: archiveInfoURL(for: primaryVideoPath), atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(at: archiveInfoURL(for: altVideoPath))
     }
 
     /// Canonical codec family name from a raw yt-dlp vcodec string (e.g.
@@ -2034,6 +2068,22 @@ final class MonitorEngine: ObservableObject {
         lines.append("Filename:")
         lines.append(URL(fileURLWithPath: videoPath).lastPathComponent)
         lines.append("")
+        lines += sourceInfoLines(url: url, meta: meta)
+        lines += downloadProcessIntroLines()
+        lines.append("")
+        lines += await technicalSpecsBlock(
+            sectionSuffix: "", videoPath: videoPath, formatId: formatId, qualityLabel: qualityLabel,
+            expectedHeight: expectedHeight, achieved: achieved, qualityConfirmed: qualityConfirmed)
+        lines.append("")
+        lines += archiveNotesLines()
+        try? lines.joined(separator: "\n").write(
+            to: dir.appendingPathComponent(base + ".archive-info.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// Shared with mergeArchiveInfoFiles below — same facts for both files of an
+    /// A/B pair (same video, same upload), so there's no reason for them to differ.
+    private func sourceInfoLines(url: String, meta: [String: Any]) -> [String] {
+        var lines: [String] = []
         lines.append(String(repeating: "-", count: 40))
         lines.append("SOURCE")
         lines.append(String(repeating: "-", count: 40))
@@ -2052,6 +2102,11 @@ final class MonitorEngine: ObservableObject {
         lines.append("Video ID:")
         lines.append((meta["id"] as? String) ?? extractYouTubeID(from: url) ?? "(unknown)")
         lines.append("")
+        return lines
+    }
+
+    private func downloadProcessIntroLines() -> [String] {
+        var lines: [String] = []
         lines.append(String(repeating: "-", count: 40))
         lines.append("DOWNLOAD PROCESS")
         lines.append(String(repeating: "-", count: 40))
@@ -2062,13 +2117,37 @@ final class MonitorEngine: ObservableObject {
             + "(browser cookies), on \(today.string(from: Date())).")
         lines.append("Video and audio tracks downloaded separately and merged into an MKV container "
             + "with ffmpeg. No re-encoding, recompression, or quality loss applied.")
-        lines.append("")
+        return lines
+    }
+
+    private func archiveNotesLines() -> [String] {
+        var lines: [String] = []
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("NOTES")
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("- Downloaded and verified automatically by Reprise.")
+        lines.append("- See the accompanying .ytdlp.log for the full format list and download transcript.")
+        lines.append("- For personal archival use only; not for distribution.")
+        return lines
+    }
+
+    /// The per-file part (format/codec/bitrate/quality-confirmation) — extracted so
+    /// mergeArchiveInfoFiles can show one of these per codec in a single combined
+    /// document instead of two near-duplicate files that only differ here.
+    /// sectionSuffix distinguishes the two in a merged doc (e.g. " — VP9 (primary
+    /// file)"); empty for the common single-file case, leaving the headings as
+    /// they've always been.
+    private func technicalSpecsBlock(
+        sectionSuffix: String, videoPath: String, formatId: String?, qualityLabel: String?,
+        expectedHeight: Int?, achieved: Int?, qualityConfirmed: Bool?
+    ) async -> [String] {
+        var lines: [String] = []
+        lines.append(String(repeating: "-", count: 40))
+        lines.append("TECHNICAL SPECIFICATIONS\(sectionSuffix)")
+        lines.append(String(repeating: "-", count: 40))
         lines.append("Formats downloaded:")
         lines.append(formatId ?? "(unknown)")
         lines.append("")
-        lines.append(String(repeating: "-", count: 40))
-        lines.append("TECHNICAL SPECIFICATIONS")
-        lines.append(String(repeating: "-", count: 40))
         lines.append("Container: Matroska Video (.mkv)")
         lines.append("Source: DASH / HTTPS stream (YouTube)")
         lines.append("")
@@ -2095,7 +2174,7 @@ final class MonitorEngine: ObservableObject {
         }
         lines.append("")
         lines.append(String(repeating: "-", count: 40))
-        lines.append("QUALITY CONFIRMATION")
+        lines.append("QUALITY CONFIRMATION\(sectionSuffix)")
         lines.append(String(repeating: "-", count: 40))
         switch qualityConfirmed {
         case true:
@@ -2107,15 +2186,7 @@ final class MonitorEngine: ObservableObject {
         case nil:
             lines.append("Not evaluated (no real format list to compare against).")
         }
-        lines.append("")
-        lines.append(String(repeating: "-", count: 40))
-        lines.append("NOTES")
-        lines.append(String(repeating: "-", count: 40))
-        lines.append("- Downloaded and verified automatically by Reprise.")
-        lines.append("- See the accompanying .ytdlp.log for the full format list and download transcript.")
-        lines.append("- For personal archival use only; not for distribution.")
-        try? lines.joined(separator: "\n").write(
-            to: dir.appendingPathComponent(base + ".archive-info.txt"), atomically: true, encoding: .utf8)
+        return lines
     }
 
     /// yt-dlp's upload_date is a bare "YYYYMMDD" string — turned into something
@@ -2541,7 +2612,7 @@ final class MonitorEngine: ObservableObject {
                 // effort, after the primary file already landed: never holds up or
                 // affects the primary download's own success/notification above.
                 if (v.quality ?? .best) == .premium, v.downloadAltPremiumCodec == true {
-                    await downloadAlternatePremiumCodec(url: v.url, label: v.label, videoId: v.id, meta: meta, primaryFormatId: formatId, primaryVideoPath: path)
+                    await downloadAlternatePremiumCodec(url: v.url, label: v.label, videoId: v.id, meta: meta, primaryFormatId: formatId, primaryQualityLabel: qualityLabel, primaryVideoPath: path)
                 }
             } else {
                 notifyFailureThrottled(videoId: v.id, title: "VOD download failed", message: "\(v.label) — check the log on the Mac Mini.")
