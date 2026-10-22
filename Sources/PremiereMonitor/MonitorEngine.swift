@@ -42,6 +42,12 @@ final class MonitorEngine: ObservableObject {
     private var ytDlpPath: String {
         MonitorEngine.findExecutable("yt-dlp") ?? "/opt/homebrew/bin/yt-dlp"
     }
+    /// Which command updates this particular yt-dlp: a Homebrew install (its symlink
+    /// resolves into a Cellar) is updated with brew, a standalone binary updates itself.
+    private var ytDlpUpdateCommand: String {
+        let resolved = URL(fileURLWithPath: ytDlpPath).resolvingSymlinksInPath().path
+        return resolved.contains("/Cellar/") ? "brew upgrade yt-dlp" : "yt-dlp -U"
+    }
     private var ffmpegPath: String? { MonitorEngine.findExecutable("ffmpeg") }
     private var ffprobePath: String? { MonitorEngine.findExecutable("ffprobe") }
     private var brewPath: String? { MonitorEngine.findExecutable("brew") }
@@ -95,7 +101,11 @@ final class MonitorEngine: ObservableObject {
     /// boekhouding om, en dat soort uit-de-pas-lopen tussen wat een
     /// pakketbeheerder denkt dat er staat en wat er werkelijk staat kostte op
     /// 19-09-2026 al een hele avond (de Homebrew-verhuizing en de node-
-    /// symlink). Bijwerken blijft dus een bewuste `brew upgrade yt-dlp`.
+    /// symlink). Bijwerken blijft dus een bewuste actie van de gebruiker:
+    /// `brew upgrade yt-dlp` bij een Homebrew-installatie, `yt-dlp -U` bij een
+    /// losse binary van GitHub (zie `ytDlpUpdateCommand`). Homebrew loopt soms
+    /// weken achter op GitHub (22-10-2026: 2026.8.19 vs 2026.10.21), dus een
+    /// losse binary die zichzelf bijwerkt is dan de praktische keuze.
     ///
     /// In plaats daarvan alleen de eigen versie naast GitHub's laatste release
     /// leggen — dat raakt yt-dlp zelf helemaal niet aan.
@@ -166,9 +176,9 @@ final class MonitorEngine: ObservableObject {
         }
         ytDlpOutdatedVersions = (huidig, nieuwste)
         log("⚠️ yt-dlp is outdated: \(huidig), latest is \(nieuwste). "
-           + "YouTube changes often break older versions silently. Run: brew upgrade yt-dlp")
+           + "YouTube changes often break older versions silently. Run: \(ytDlpUpdateCommand)")
         notify(title: "Reprise — yt-dlp is outdated",
-              message: "\(huidig) → \(nieuwste) available. Run in Terminal: brew upgrade yt-dlp")
+              message: "\(huidig) → \(nieuwste) available. Run in Terminal: \(ytDlpUpdateCommand)")
     }
 
     /// Actually tests whether we can write to the download folder (macOS protects Downloads
@@ -2698,7 +2708,7 @@ final class MonitorEngine: ObservableObject {
         var problems: [String] = []
 
         if let outdated = ytDlpOutdatedVersions {
-            problems.append("yt-dlp is outdated (\(outdated.current) → \(outdated.latest)) — run: brew upgrade yt-dlp")
+            problems.append("yt-dlp is outdated (\(outdated.current) → \(outdated.latest)) — run: \(ytDlpUpdateCommand)")
         }
         if permissionWarnings["download-folder"] != nil {
             problems.append("Can't write to the download folder — check Full Disk Access.")
