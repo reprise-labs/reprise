@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.62</title>
+            <sparkle:version>1.6.62</sparkle:version>
+            <sparkle:shortVersionString>1.6.62</sparkle:shortVersionString>
+            <description><![CDATA[The yt-dlp update hint now matches how yt-dlp is installed: 'brew upgrade yt-dlp' for a Homebrew install, 'yt-dlp -U' for a standalone binary (which updates itself). Homebrew can lag GitHub releases by weeks, so the old fixed brew hint wasn't always usable.]]></description>
+            <pubDate>Thu, 22 Oct 2026 20:16:06 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.62/Reprise.zip" length="4244718" type="application/octet-stream" sparkle:edSignature="Js4zcWjNzR64j0Zt6BeFBdlsSRk4wwgbin7jNo9QZwan8rPdBSAOe5fpyFKFKJlim4Bebip4x9W2W1tiWACpDA==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.61</title>
             <sparkle:version>1.6.61</sparkle:version>
             <sparkle:shortVersionString>1.6.61</sparkle:shortVersionString>
