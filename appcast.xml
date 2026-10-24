@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.63</title>
+            <sparkle:version>1.6.63</sparkle:version>
+            <sparkle:shortVersionString>1.6.63</sparkle:shortVersionString>
+            <description><![CDATA[Show in Finder now selects every file of the video at once (LIVE + VOD + thumbnail, txt, log and archive-info), so nothing gets lost in a Finder window grouped by Kind.]]></description>
+            <pubDate>Sat, 24 Oct 2026 16:39:43 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.63/Reprise.zip" length="4247324" type="application/octet-stream" sparkle:edSignature="jrVLOdVkefpkWMtXRMlLWetc+3OZw3qGIMrSuGDy8Lk/+H9tolUzNV8f7+GjqP7/y0s7rQPDjepDYOrdLqpICw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.62</title>
             <sparkle:version>1.6.62</sparkle:version>
             <sparkle:shortVersionString>1.6.62</sparkle:shortVersionString>
