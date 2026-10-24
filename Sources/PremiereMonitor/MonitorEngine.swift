@@ -806,6 +806,22 @@ final class MonitorEngine: ObservableObject {
     }
 
     func revealFile(_ video: MonitoredVideo) {
+        // Selects every file belonging to this video (LIVE + VOD + jpg/txt/log/archive-info),
+        // not just finalFilePath. On 24-10-2026 a Finder window grouped by Kind showed only the
+        // two .mkv's next to the selected VOD, with the sidecars far down in other groups —
+        // looked like the LIVE capture had produced nothing. The video ID sits in every
+        // filename (see outTemplate in downloadVideo), so matching on it catches them all.
+        if let id = video.youtubeID,
+           let names = try? FileManager.default.contentsOfDirectory(atPath: downloadRoot.path) {
+            let matches = names
+                .filter { !$0.hasPrefix(".") && $0.contains(id) }
+                .sorted()
+                .map { downloadRoot.appendingPathComponent($0) }
+            if !matches.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(matches)
+                return
+            }
+        }
         if let path = video.finalFilePath, FileManager.default.fileExists(atPath: path) {
             NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: downloadRoot.path)
         } else {
