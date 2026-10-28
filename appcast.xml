@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.64</title>
+            <sparkle:version>1.6.64</sparkle:version>
+            <sparkle:shortVersionString>1.6.64</sparkle:shortVersionString>
+            <description><![CDATA[Every problem in the warning banner now has a one-click fix (System Settings, Install via Homebrew, Update yt-dlp, Storage, Log in to YouTube) plus a Test again button; the shield button in the toolbar runs all checks any time. yt-dlp outdated now shows in the banner and Update targets the exact yt-dlp Reprise uses. Network/SSL errors in the login test are reported as a network problem, not an expired login, and retried once. Reprise no longer freezes while yt-dlp runs, so the menu bar icon opens right away after launch. Old pre-Sparkle app backups are moved to the Trash so Spotlight stops listing them. A successful manual login test now clears the login warning.]]></description>
+            <pubDate>Wed, 28 Oct 2026 17:39:01 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.64/Reprise.zip" length="4278082" type="application/octet-stream" sparkle:edSignature="yIBySbKTgt5gpbW4L61LqrQup1YH4/mPTe5Bv473mQDpeg3IBHmHm9+PHuzZjR4WXDmZKI5K2CoWTvRfYwExCw==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.63</title>
             <sparkle:version>1.6.63</sparkle:version>
             <sparkle:shortVersionString>1.6.63</sparkle:shortVersionString>
