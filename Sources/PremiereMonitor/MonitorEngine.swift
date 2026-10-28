@@ -477,6 +477,10 @@ final class MonitorEngine: ObservableObject {
         let (rc, out, err) = await runProcess(ytDlpPath, metaArgs(url: testUrl, metCookies: true))
         if rc == 0, !out.isEmpty {
             cookiesGeweigerd = false          // usable again after a fresh login
+            // Cleared here, not only in checkCookieLogin(): the Settings button calls this
+            // directly, and a passing manual test left the daily check's failure banner
+            // standing (28-10-2026, after a one-off SSL error on the MacBook Pro).
+            permissionWarnings["cookie-login"] = nil
             log("Cookie test passed — YouTube accepts your \(browserName) login.")
             return (true, "Success — YouTube accepts your \(browserName) login.")
         }
