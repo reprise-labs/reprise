@@ -81,6 +81,7 @@ final class MonitorEngine: ObservableObject {
         self.channels = Store.loadChannels()
         self.discoveredVideos = Store.loadDiscovered()
         log("Reprise started. Download folder: \(downloadRoot.path)")
+        trashOldAppBackups()
         checkDownloadFolderWritable()
         checkCookieBrowserAccess()
         checkDiskSpace()
@@ -89,6 +90,21 @@ final class MonitorEngine: ObservableObject {
             log("Loaded: [\(v.label)] scheduled \(v.scheduledDate.formatted(date: .abbreviated, time: .standard)), status=\(v.status.displayName)")
         }
         startLoop()          // tick() draait meteen, en checkt daarbinnen ook yt-dlp
+    }
+
+    /// Application Support/Reprise/Backups holds whole "Reprise.app.backup-<date>" copies
+    /// left by the self-updater that Sparkle replaced. Nothing uses them anymore, and
+    /// Spotlight listed them as two folders above the real app when searching "Reprise"
+    /// (28-10-2026). Moved to the Trash rather than deleted, so they're still recoverable.
+    private func trashOldAppBackups() {
+        let backups = Store.appSupportDir.appendingPathComponent("Backups")
+        guard FileManager.default.fileExists(atPath: backups.path) else { return }
+        do {
+            try FileManager.default.trashItem(at: backups, resultingItemURL: nil)
+            log("Moved old app backups (\(backups.path)) to the Trash — no longer used since Sparkle.")
+        } catch {
+            log("· Could not move old app backups to the Trash: \(error.localizedDescription)")
+        }
     }
 
     /// Eén keer bij het opstarten, en daarna hooguit één keer per dag.
@@ -115,8 +131,8 @@ final class MonitorEngine: ObservableObject {
     /// again itself — nil means "up to date" or "couldn't tell", never "outdated".
     private var ytDlpOutdatedVersions: (current: String, latest: String)?
 
-    func checkYtDlpVersion() async {
-        if let last = lastYtDlpVersionCheck, Date().timeIntervalSince(last) < 86400 { return }
+    func checkYtDlpVersion(force: Bool = false, silent: Bool = false) async {
+        if !force, let last = lastYtDlpVersionCheck, Date().timeIntervalSince(last) < 86400 { return }
         lastYtDlpVersionCheck = Date()
 
         let (huidigRC, huidigOut, _) = await runProcess(ytDlpPath, ["--version"])
@@ -172,13 +188,71 @@ final class MonitorEngine: ObservableObject {
         if nieuwste == huidig {
             log("✅ yt-dlp is up to date (\(huidig)).")
             ytDlpOutdatedVersions = nil
+            permissionWarnings["ytdlp-outdated"] = nil
+            return
+        }
+        // Homebrew can lag GitHub by weeks (22-10-2026). Then `brew upgrade` has nothing to
+        // install, and a warning with an Update button would just stay up after every
+        // "Test again" — so for a Homebrew install, only warn once brew itself has the
+        // newer version. Asks formulae.brew.sh, not the local `brew info` cache, which is
+        // only as fresh as the last `brew update`.
+        if isHomebrewYtDlp, let brewStable = await homebrewStableYtDlpVersion(), brewStable == huidig {
+            log("✅ yt-dlp \(huidig) is the newest Homebrew has — GitHub already has \(nieuwste), "
+               + "Homebrew usually follows within days.")
+            ytDlpOutdatedVersions = nil
+            permissionWarnings["ytdlp-outdated"] = nil
             return
         }
         ytDlpOutdatedVersions = (huidig, nieuwste)
+        permissionWarnings["ytdlp-outdated"] = "yt-dlp is outdated (\(huidig) → \(nieuwste)) — YouTube changes "
+            + "often break older versions silently."
         log("⚠️ yt-dlp is outdated: \(huidig), latest is \(nieuwste). "
            + "YouTube changes often break older versions silently. Run: \(ytDlpUpdateCommand)")
-        notify(title: "Reprise — yt-dlp is outdated",
-              message: "\(huidig) → \(nieuwste) available. Run in Terminal: \(ytDlpUpdateCommand)")
+        if !silent {
+            notify(title: "Reprise — yt-dlp is outdated",
+                  message: "\(huidig) → \(nieuwste) available. Use Update in Reprise, or run in Terminal: \(ytDlpUpdateCommand)")
+        }
+    }
+
+    private var isHomebrewYtDlp: Bool {
+        URL(fileURLWithPath: ytDlpPath).resolvingSymlinksInPath().path.contains("/Cellar/")
+    }
+
+    /// Current stable yt-dlp version in Homebrew, or nil if that couldn't be fetched.
+    private func homebrewStableYtDlpVersion() async -> String? {
+        guard let url = URL(string: "https://formulae.brew.sh/api/formula/yt-dlp.json") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let versions = json["versions"] as? [String: Any] else { return nil }
+        return versions["stable"] as? String
+    }
+
+    /// The Update button on the "yt-dlp is outdated" warning. Targets the exact binary
+    /// Reprise runs (absolute paths) — on 28-10-2026 a plain `yt-dlp -U` typed in
+    /// Terminal on the MacBook Pro updated a *different* yt-dlp than the Homebrew one
+    /// Reprise actually uses. Visible in Terminal, same reasoning as installMissingTools().
+    func updateYtDlp() {
+        let command: String
+        if isHomebrewYtDlp, let brew = brewPath {
+            command = "\(brew) upgrade yt-dlp"
+        } else {
+            command = "'\(ytDlpPath)' -U"
+        }
+        runInTerminal(command)
+    }
+
+    /// Opens Terminal and runs `command` there, visibly.
+    private func runInTerminal(_ command: String) {
+        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "tell application \"Terminal\"\nactivate\ndo script \"\(escaped)\"\nend tell"
+        log("Opening Terminal to run: \(command)")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
     }
 
     /// Actually tests whether we can write to the download folder (macOS protects Downloads
@@ -399,13 +473,7 @@ final class MonitorEngine: ObservableObject {
             return
         }
 
-        let command = "\(brew) install \(missing.joined(separator: " "))"
-        let script = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"
-        log("Opening Terminal to run: \(command)")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        try? process.run()
+        runInTerminal("\(brew) install \(missing.joined(separator: " "))")
     }
 
     /// Re-runs the startup checks on demand (the "Check again" button in
@@ -417,6 +485,30 @@ final class MonitorEngine: ObservableObject {
         checkDiskSpace(silent: true)
         checkExternalTools(silent: true)
         Task { await checkCookieLogin(force: true, silent: true) }
+    }
+
+    @Published var isCheckingAll = false
+    /// When the last "Test again for problems" finished, and how many problems it left
+    /// standing — drives the "all good" / "still N problems" line under the banner.
+    @Published var lastFullCheck: (date: Date, problems: Int)?
+
+    /// "Test again for problems": every check Reprise has, forced past its daily
+    /// throttle, without pushes (whoever clicked is looking at the result). After
+    /// fixing something you see right away whether it's really fixed (28-10-2026).
+    func runAllChecks() async {
+        guard !isCheckingAll else { return }
+        isCheckingAll = true
+        defer { isCheckingAll = false }
+        log("Testing for problems (manual)...")
+        checkDownloadFolderWritable(silent: true)
+        checkCookieBrowserAccess(silent: true)
+        checkDiskSpace(silent: true)
+        checkExternalTools(silent: true)
+        await checkYtDlpVersion(force: true, silent: true)
+        await checkCookieLogin(force: true, silent: true)
+        let problems = permissionWarnings.count
+        lastFullCheck = (Date(), problems)
+        log(problems == 0 ? "✅ All checks passed." : "⚠️ Check finished — \(problems) problem(s) remaining.")
     }
 
     /// Your own Pushover credentials from Settings, if you've set them.
@@ -474,7 +566,20 @@ final class MonitorEngine: ObservableObject {
         // Bewust níet via fetchMeta: die valt bij geweigerde cookies terug op
         // een poging zónder, en dan zou deze test "cookies werken" melden
         // terwijl ze juist stuk zijn. Hier willen we het eerlijke antwoord.
-        let (rc, out, err) = await runProcess(ytDlpPath, metaArgs(url: testUrl, metCookies: true))
+        // Bounded on purpose: tick() awaits this in sequence, and on 28-10-2026 a broken
+        // TLS connection on the MacBook Pro kept yt-dlp's own default retries going for
+        // ~6 minutes before it gave up. Short socket timeout + few retries here, one
+        // retry of our own below for a network error, so a bad network costs ~1-2 min.
+        var testArgs = metaArgs(url: testUrl, metCookies: true)
+        testArgs.insert(contentsOf: ["--socket-timeout", "20", "--extractor-retries", "1"],
+                        at: testArgs.count - 1)
+        var (rc, out, err) = await runProcess(ytDlpPath, testArgs)
+        if rc != 0 || out.isEmpty, isNetworkError(err) {
+            log("Cookie test hit a network error — retrying once in 10 s: \(tail(err))")
+            try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
+            (rc, out, err) = await runProcess(ytDlpPath, testArgs)
+        }
+        lastCookieTestWasNetworkError = false
         if rc == 0, !out.isEmpty {
             cookiesGeweigerd = false          // usable again after a fresh login
             // Cleared here, not only in checkCookieLogin(): the Settings button calls this
@@ -485,6 +590,14 @@ final class MonitorEngine: ObservableObject {
             return (true, "Success — YouTube accepts your \(browserName) login.")
         }
         let detail = tail(err)
+        if isNetworkError(err) {
+            // Not a cookie problem at all — the old "Cookie test FAILED" + raw SSL dump made
+            // a dropped connection look like an expired login (28-10-2026).
+            lastCookieTestWasNetworkError = true
+            log("Cookie test couldn't reach YouTube (network problem, not your login): \(detail)")
+            return (false, "Couldn't reach YouTube — a network problem, not your login. Check Wi-Fi, "
+                        + "VPN or firewall, then test again.")
+        }
         log("Cookie test FAILED (rc=\(rc)): \(detail)")
         if cookieFoutmelding(err) {
             // Only a recognized cookie-rejection sets this — not any failure. Found
@@ -504,6 +617,24 @@ final class MonitorEngine: ObservableObject {
     }
 
     private var lastCookieLoginCheck: Date?
+    /// Set by testCookies(): the daily unattended check then skips the push for a
+    /// network error — the banner still shows it, and the pre-flight checks before a
+    /// premiere would catch a network that stays broken.
+    private(set) var lastCookieTestWasNetworkError = false
+
+    /// yt-dlp's stderr for "couldn't talk to YouTube at all", as opposed to YouTube
+    /// answering with a refusal. Matched on the exact 28-10-2026 MacBook Pro failure
+    /// ("Unable to download API page: [SSL: UNEXPECTED_EOF_WHILE_READING] ...") plus
+    /// the other usual socket-level failures.
+    private func isNetworkError(_ stderr: String) -> Bool {
+        let s = stderr.lowercased()
+        // Not "unable to download webpage/api page" on its own: yt-dlp uses that same
+        // prefix for HTTP 403/429 answers too, which are YouTube refusing, not the network.
+        return ["[ssl", "sslerror", "unexpected_eof", "timed out", "connection reset",
+                "connection refused", "urlopen error", "name resolution",
+                "nodename nor servname", "network is unreachable", "no route to host",
+                "remote end closed connection"].contains { s.contains($0) }
+    }
 
     /// Runs the same real check as the "Test YouTube login" button in Settings, but
     /// automatically (once a day, same self-throttle as checkYtDlpVersion) instead of
@@ -524,7 +655,7 @@ final class MonitorEngine: ObservableObject {
             permissionWarnings["cookie-login"] = nil
         } else {
             permissionWarnings["cookie-login"] = message
-            if !silent {
+            if !silent, !lastCookieTestWasNetworkError {
                 notify(title: "Reprise: YouTube login check failed", message: message)
             }
         }
@@ -845,7 +976,13 @@ final class MonitorEngine: ObservableObject {
     // MARK: - Process helpers
 
     private func runProcess(_ path: String, _ args: [String]) async -> (Int32, String, String) {
+        // The whole body runs on a background queue: withCheckedContinuation executes its
+        // closure synchronously on the caller's actor — the main actor here — so the
+        // waitUntilExit() below used to freeze the UI for as long as yt-dlp ran. At
+        // launch (yt-dlp version + cookie check) that meant the menu bar icon wouldn't
+        // open for a long while, or ~6 minutes on a bad network (28-10-2026).
         await withCheckedContinuation { continuation in
+          DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: path)
             process.arguments = args
@@ -887,6 +1024,7 @@ final class MonitorEngine: ObservableObject {
             let out = String(data: outData, encoding: .utf8) ?? ""
             let err = String(data: errData, encoding: .utf8) ?? ""
             continuation.resume(returning: (process.terminationStatus, out, err))
+          }
         }
     }
 
@@ -1070,7 +1208,7 @@ final class MonitorEngine: ObservableObject {
     /// is het geslaagd; liggen beeld en geluid nog los, dan voegen we ze hier
     /// alsnog samen. Geeft het uiteindelijke pad terug, of nil als er niets
     /// bruikbaars staat.
-    private func reddenNaFout(url: String, tag: String, label: String) -> String? {
+    private func reddenNaFout(url: String, tag: String, label: String) async -> String? {
         guard let vid = extractYouTubeID(from: url) else { return nil }
         let fm = FileManager.default
         guard let alles = try? fm.contentsOfDirectory(atPath: downloadRoot.path) else { return nil }
@@ -1127,19 +1265,11 @@ final class MonitorEngine: ObservableObject {
             log("[\(label)] No ffmpeg found — video and audio remain as separate files.")
             return nil
         }
-        let proces = Process()
-        proces.executableURL = URL(fileURLWithPath: ffmpeg)
-        proces.arguments = ["-v", "error", "-y", "-i", pad(v), "-i", pad(a),
-                            "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", doel]
-        do {
-            try proces.run()
-            proces.waitUntilExit()
-        } catch {
-            log("[\(label)] Merge failed: \(error.localizedDescription)")
-            return nil
-        }
-        guard proces.terminationStatus == 0, fm.fileExists(atPath: doel) else {
-            log("[\(label)] Merge failed (ffmpeg exited \(proces.terminationStatus)).")
+        // Through runProcess (off the main thread) — a multi-GB merge used to block the UI.
+        let (rc, _, err) = await runProcess(ffmpeg, ["-v", "error", "-y", "-i", pad(v), "-i", pad(a),
+                                                     "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", doel])
+        guard rc == 0, fm.fileExists(atPath: doel) else {
+            log("[\(label)] Merge failed (ffmpeg exited \(rc))\(err.isEmpty ? "" : ": \(tail(err))").")
             return nil
         }
         log("[\(label)] Merged → \(doel)")
@@ -1790,7 +1920,7 @@ final class MonitorEngine: ObservableObject {
 
         // Foutcode is hier geen eindoordeel: zie reddenNaFout. Eerst kijken wat
         // er op schijf staat, dan pas iemand wakker maken.
-        if let gered = reddenNaFout(url: url, tag: tag, label: label) {
+        if let gered = await reddenNaFout(url: url, tag: tag, label: label) {
             log("[\(label)] Done despite the error code (\(tag)) → \(gered)")
             // Geen format_id beschikbaar hier — de --print after_move-regel vuurt
             // alleen bij een schone afsluiting, en dit pad is juist voor een

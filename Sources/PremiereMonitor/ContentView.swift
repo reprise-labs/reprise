@@ -10,6 +10,7 @@ struct ContentView: View {
     /// own clearly-separate place.
     private enum MainSection { case tracked, upcoming }
     @State private var selectedSection: MainSection = .tracked
+    @State private var showCheckResult = false
     @State private var isRefreshingUpcoming = false
 
     private var sortedVideos: [MonitoredVideo] {
@@ -81,6 +82,33 @@ struct ContentView: View {
         return min(max(content, 160), 440)
     }
 
+    /// Shared by the banner's "Test again" and the toolbar's shield button.
+    private func runChecks() {
+        Task {
+            await engine.runAllChecks()
+            withAnimation { showCheckResult = true }
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            withAnimation { showCheckResult = false }
+        }
+    }
+
+    private var testAgainButton: some View {
+        Button {
+            runChecks()
+        } label: {
+            if engine.isCheckingAll {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Testing…").font(.caption)
+                }
+            } else {
+                Label("Test again", systemImage: "arrow.clockwise").font(.caption)
+            }
+        }
+        .controlSize(.small)
+        .disabled(engine.isCheckingAll)
+    }
+
     var body: some View {
         if isBlockedByPermissions {
             PermissionGateView()
@@ -124,6 +152,20 @@ struct ContentView: View {
                         .help("Check watched channels now")
                         .accessibilityLabel("Check watched channels now")
                     }
+
+                    Button {
+                        runChecks()
+                    } label: {
+                        if engine.isCheckingAll {
+                            ProgressView().controlSize(.small).frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "checkmark.shield")
+                        }
+                    }
+                    .disabled(engine.isCheckingAll)
+                    .contentShape(Rectangle())
+                    .help("Test for problems")
+                    .accessibilityLabel("Test for problems")
 
                     Button {
                         engine.openDownloadFolder()
@@ -181,12 +223,54 @@ struct ContentView: View {
                                     .font(.caption)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer()
+                                if let fix = ProblemFixes.fix(for: key) {
+                                    Button {
+                                        fix.action()
+                                    } label: {
+                                        Label(fix.label, systemImage: fix.icon)
+                                            .font(.caption)
+                                    }
+                                    .controlSize(.small)
+                                }
                             }
                         }
+                        // Fix it, then test again — so you know where you stand instead of
+                        // waiting for tomorrow's automatic check (28-10-2026).
+                        HStack(spacing: 8) {
+                            testAgainButton
+                            if let result = engine.lastFullCheck, result.problems > 0 {
+                                Text("Still \(result.problems) problem\(result.problems == 1 ? "" : "s") at "
+                                     + result.date.formatted(date: .omitted, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(.top, 2)
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .transition(.opacity)
+                }
+
+                if engine.permissionWarnings.isEmpty, showCheckResult, let result = engine.lastFullCheck,
+                   result.problems == 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("All checks passed at \(result.date.formatted(date: .omitted, time: .shortened)) — "
+                             + "folder, browser cookies, YouTube login, yt-dlp, ffmpeg and disk space are fine.")
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal)
                     .padding(.top, 8)

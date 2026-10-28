@@ -14,9 +14,7 @@ struct PermissionGateView: View {
         let title: String
         let message: String
         let instructions: String
-        let actionLabel: String?
-        let actionIcon: String
-        let action: (() -> Void)?
+        let fix: ProblemFix?
     }
 
     private var issues: [Issue] {
@@ -29,13 +27,7 @@ struct PermissionGateView: View {
                     + "Reprise can't save anything it downloads.",
                 instructions: "Grant access in System Settings → Privacy & Security → Files and Folders → "
                     + "Reprise → Downloads Folder, then check again below.",
-                actionLabel: "Open System Settings",
-                actionIcon: "gearshape",
-                action: {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_DownloadsFolder") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                fix: ProblemFixes.fix(for: "download-folder")
             ))
         }
         if let warning = engine.permissionWarnings["cookie-access"] {
@@ -50,13 +42,7 @@ struct PermissionGateView: View {
                 title: "Browser cookie access",
                 message: warning,
                 instructions: "",
-                actionLabel: "Open System Settings",
-                actionIcon: "gearshape",
-                action: {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                fix: ProblemFixes.fix(for: "cookie-access")
             ))
         }
         if let warning = engine.permissionWarnings["external-tools"] {
@@ -65,9 +51,7 @@ struct PermissionGateView: View {
                 title: "Missing yt-dlp / ffmpeg",
                 message: warning,
                 instructions: "",
-                actionLabel: "Install via Homebrew",
-                actionIcon: "terminal",
-                action: { engine.installMissingTools() }
+                fix: ProblemFixes.fix(for: "external-tools")
             ))
         }
         return result
@@ -93,11 +77,11 @@ struct PermissionGateView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: 380)
-                        if let action = issue.action, let label = issue.actionLabel {
+                        if let fix = issue.fix {
                             Button {
-                                action()
+                                fix.action()
                             } label: {
-                                Label(label, systemImage: issue.actionIcon)
+                                Label(fix.label, systemImage: fix.icon)
                             }
                             .buttonStyle(.bordered)
                         }
