@@ -56,9 +56,10 @@ git fetch -q origin main
 gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1 && fail "Release $VERSION already exists."
 grep -q "<sparkle:version>$VERSION</sparkle:version>" appcast.xml && fail "appcast.xml already has $VERSION."
 
-# install.sh restarts Reprise; never in the middle of a recording. Metadata checks
-# (--skip-download) are harmless, a real download is not.
-if pgrep -fl yt-dlp | grep -v -- "--skip-download" | grep -q yt-dlp; then
+# install.sh restarts Reprise; never in the middle of a recording. Only a real download
+# passes "-o <template>" (see downloadVideo); metadata checks, "--version" and the like
+# are short-lived and harmless.
+if pgrep -fl yt-dlp | grep -q -- " -o "; then
     fail "A download is running right now — try again when it's done."
 fi
 
