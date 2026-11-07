@@ -12,6 +12,11 @@ Dit bestand is de enige bron; `CLAUDE.md` verwijst hiernaar. Houd het actueel.
   account `andrevanos` heeft geen schrijfrechten). Zonder het actieve account te wisselen:
   `git -c credential.helper= -c credential.helper='!f(){ echo username=x-access-token; echo "password=$(gh auth token --user reprise-labs)"; }; f' push`
   en voor `gh`: `GH_TOKEN=$(gh auth token --user reprise-labs) gh …`.
+- **Commits alleen als `reprise-labs <334611916+reprise-labs@users.noreply.github.com>`,
+  zonder `Co-Authored-By`-regels of "Generated with …"-regels** (ook niet voor Claude of
+  Codex). GitHub telt elk ander adres en elke co-auteur als contributor; op 7-11-2026 zijn
+  reprise en sleeve daarom verwijderd en schoon opnieuw aangemaakt. Nooit `avanos@live.nl`
+  gebruiken: dat adres hoort bij een ander GitHub-account.
 - `./install.sh` herstart de draaiende app. Kijk eerst in `premieres.log` (en `pgrep yt-dlp`)
   of er geen opname bezig is.
 - Bugs: eerst de oorzaak aantonen, dan pas fixen (zie "Debuggen" hieronder).
