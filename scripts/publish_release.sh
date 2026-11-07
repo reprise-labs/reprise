@@ -5,7 +5,8 @@
 # in a real interactive Terminal session — sign_update prompts Keychain for the private key
 # (by design: a compromised script should never be able to silently sign a malicious update),
 # and that prompt doesn't reliably surface outside a normal Terminal.app session. So the
-# release flow is, every time:
+# release flow is, every time (now automated end-to-end by scripts/release.sh, which
+# also calls this script — the manual steps below are kept for reference):
 #
 #   1. Build + install as usual (install.sh), bump Resources/VERSION first.
 #   2. ditto -c -k --keepParent /Applications/Reprise.app Reprise.zip

@@ -34,14 +34,16 @@ Dit bestand is de enige bron; `CLAUDE.md` verwijst hiernaar. Houd het actueel.
   `~/Reprise-oud-1.6.64/`.
 
 ## Release (alleen op verzoek)
-1. `Resources/VERSION` ophogen, `./install.sh`.
-2. `ditto -c -k --keepParent /Applications/Reprise.app Reprise.zip`
-3. De gebruiker draait **zelf in Terminal.app**:
-   `./.build/artifacts/sparkle/Sparkle/bin/sign_update Reprise.zip`
-   (Keychain-prompt voor de Sparkle-sleutel; verschijnt niet betrouwbaar buiten Terminal.app).
-4. `gh release create <versie> Reprise.zip --title "Reprise <versie>" --notes "…"`
-   — **vóór** stap 5, anders wijst de appcast naar een bestand dat nog niet bestaat.
-5. `./scripts/publish_release.sh <versie> <edSignature> <length> "<notes>"` (commit + push appcast).
+Volledig automatisch, geen handwerk van de gebruiker:
+
+    scripts/release.sh --dry-run <versie> "<release notes>"   # alle checks + proefsignering
+    scripts/release.sh <versie> "<release notes>"             # echte release
+
+Het script controleert eerst alles (account `reprise-labs`, schrijfrechten, versie nog vrij,
+geen download bezig, Sparkle-signering werkt zonder Keychain-vraag), en doet dan: VERSION
+ophogen + commit, `install.sh`, zip, `sign_update` + verificatie, push, `gh release create`,
+en pas daarna de appcast (`publish_release.sh`). Commits van het script staan op naam van
+het no-reply-adres van `reprise-labs`.
 
 ## Debuggen van de draaiende app
 - Vensters: `CGWindowListCopyWindowInfo` (Swift-script) → `screencapture -x -o -l <windowid>`.
