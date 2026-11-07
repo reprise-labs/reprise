@@ -5,6 +5,15 @@
         <description>Reprise release updates.</description>
         <language>en</language>
         <item>
+            <title>Version 1.6.75</title>
+            <sparkle:version>1.6.75</sparkle:version>
+            <sparkle:shortVersionString>1.6.75</sparkle:shortVersionString>
+            <description><![CDATA[Reprise is rebuilt and redesigned: a new main window with Scheduled, Incoming and Recordings, a clearer next-premiere card with progress steps, and confirmation of exactly which VOD version was downloaded (resolution, codec, fps) in the app and in the push notification. Also fixes a dark band that could cover the page header.]]></description>
+            <pubDate>Sat, 07 Nov 2026 18:25:04 +0000</pubDate>
+            <enclosure url="https://github.com/reprise-labs/reprise/releases/download/1.6.75/Reprise.zip" length="3376151" type="application/octet-stream" sparkle:edSignature="k6le7L3rc2TQ1g2CiwfttM9RgzkUQTF/i5XY/U6uyt/YDqCcvjjNJo4riRQb8KP4N4WlmoRfhl/R3i4VJofKAg==" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.6.64</title>
             <sparkle:version>1.6.64</sparkle:version>
             <sparkle:shortVersionString>1.6.64</sparkle:shortVersionString>
