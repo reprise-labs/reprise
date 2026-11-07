@@ -1,102 +1,101 @@
 # Reprise
 
-Een macOS-menubalkapp die YouTube-premières voor je opneemt. Reprise houdt de
-première in de gaten, neemt de uitzending LIVE op vanaf het eerste moment en haalt
-daarna de definitieve VOD binnen, in de beste kwaliteit die YouTube aanbiedt.
+A macOS menu bar app that records YouTube premieres for you. Reprise watches the
+premiere, captures the LIVE broadcast from the very first moment and then fetches the
+final VOD, in the best quality YouTube offers.
 `Première → Live → Reprise`.
 
 ![Reprise](Artwork/Reprise.png)
 
-## Versie 1.6.75
+## Version 1.6.75
 
-Nieuw in deze versie: een vernieuwd hoofdvenster met **Scheduled**, **Incoming** en
-**Recordings**, een duidelijke kaart voor de eerstvolgende première met de stappen
-Verified → Monitoring → Capture LIVE → Save VOD, en bevestiging van precies welke
-VOD-versie is binnengehaald: resolutie, codec en beeldsnelheid, in de app én in de
-pushmelding. Ook opgelost: een donkere balk die soms over de paginatitel lag.
+New in this version: a redesigned main window with **Scheduled**, **Incoming** and
+**Recordings**, a clear card for the next premiere with the steps
+Verified → Monitoring → Capture LIVE → Save VOD, and confirmation of exactly which VOD
+version was downloaded: resolution, codec and frame rate, in the app and in the push
+notification. Also fixed: a dark band that could cover the page title.
 
-Apple Silicon, macOS 14 of nieuwer. De app is lokaal ondertekend en niet bij Apple
-genotariseerd. De interface is Engels. Reprise maakt gebruik van
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) en ffmpeg; die installeer je apart.
+Apple Silicon, macOS 14 or later. The app is signed locally and not notarized by Apple.
+Reprise uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) and ffmpeg; you install those
+separately.
 
-## Installeren
+## Installation
 
-Download `Reprise.zip` via [Releases](https://github.com/reprise-labs/reprise/releases).
+Download `Reprise.zip` from [Releases](https://github.com/reprise-labs/reprise/releases).
 
-1. Installeer yt-dlp en ffmpeg met [Homebrew](https://brew.sh): `brew install yt-dlp ffmpeg`.
-2. Pak de zip uit en verplaats `Reprise.app` naar je Apps-map.
-3. Open Reprise de eerste keer met **rechtsklik → Open**. Omdat de app niet is
-   genotariseerd, weigert een gewone dubbelklik; rechtsklik toont de knop *Open toch*.
+1. Install yt-dlp and ffmpeg with [Homebrew](https://brew.sh): `brew install yt-dlp ffmpeg`.
+2. Unzip the file and move `Reprise.app` to your Applications folder.
+3. Open Reprise the first time with **right-click → Open**. Because the app isn't
+   notarized, a plain double-click refuses to open it; right-click shows an *Open* button.
 
-Updates komen daarna vanzelf binnen via [Sparkle](https://sparkle-project.org):
-Reprise kijkt dagelijks, toont de releasenotes en controleert elke download met een
-EdDSA-handtekening voordat hij wordt geïnstalleerd.
+After that, updates arrive automatically through [Sparkle](https://sparkle-project.org):
+Reprise checks daily, shows the release notes and verifies every download with an EdDSA
+signature before installing it.
 
-## Eerste start
+## First launch
 
-Reprise controleert bij het opstarten drie dingen en opent zijn venster als er iets
-ontbreekt:
+At startup Reprise checks three things and opens its window if anything is missing:
 
-1. **Schrijfrechten op de downloadmap** (standaard `~/Downloads/Reprise`, aan te passen
-   in Settings).
-2. **Volledige schijftoegang**, nodig om de cookies van Chrome of Safari te lezen voor
-   premières waarvoor je ingelogd moet zijn of Premium-kwaliteit:
-   Systeeminstellingen → Privacy en beveiliging → Volledige schijftoegang → Reprise.
-   Openbare video's lukken ook zonder.
-3. **yt-dlp en ffmpeg.** Ontbreekt er een, dan toont Reprise het juiste
-   `brew install`-commando.
+1. **Write access to the download folder** (`~/Downloads/Reprise` by default, can be
+   changed in Settings).
+2. **Full Disk Access**, needed to read Chrome's or Safari's cookies for premieres that
+   require a login or Premium quality:
+   System Settings → Privacy & Security → Full Disk Access → Reprise.
+   Public videos work without it.
+3. **yt-dlp and ffmpeg.** If one is missing, Reprise shows the right `brew install`
+   command.
 
-Met *Check again* worden de controles opnieuw gedaan zonder herstart.
+*Check again* reruns the checks without a restart.
 
-## Gebruik
+## Usage
 
-- **Première toevoegen:** plak de YouTube-link via *Add premiere*. Reprise leest de
-  geplande tijd uit en vraagt welke kwaliteit je wilt (Best of Premium).
-- **Scheduled:** de eerstvolgende première met zijn voortgang, de rest eronder, en de
-  laatst voltooide opname.
-- **Incoming:** nieuwe premières die Reprise vindt op kanalen die je volgt. Kanalen
-  voeg je toe in Settings; Reprise kijkt één keer per dag, of direct met *Check now*.
-- **Recordings:** alle voltooide opnames, met per opname de binnengehaalde versie.
-- **Menubalk:** rood betekent dat er iets aandacht nodig heeft, blauw dat er wordt
-  gedownload, groen dat alles in orde is. Rechtsklik voor een snel statusmenu.
-- **Opstarten bij inloggen:** Settings → General → *Start at login*.
+- **Adding a premiere:** paste the YouTube link via *Add premiere*. Reprise reads the
+  scheduled time and asks which quality you want (Best or Premium).
+- **Scheduled:** the next premiere with its progress, the rest below it, and the most
+  recently completed recording.
+- **Incoming:** new premieres Reprise finds on channels you follow. Add channels in
+  Settings; Reprise checks once a day, or right away with *Check now*.
+- **Recordings:** every completed recording, each with the version that was downloaded.
+- **Menu bar:** red means something needs attention, blue means a download is running,
+  green means everything is fine. Right-click for a quick status menu.
+- **Start at login:** Settings → General → *Start at login*.
 
-## Wat Reprise precies doet
+## What Reprise does
 
-- Vlak voor de geplande tijd begint Reprise de status van de video te controleren.
-- Zodra de première live gaat, start de opname direct, vanaf het begin van de uitzending.
-- Daarna wacht Reprise tot YouTube de VOD in volledige kwaliteit aanbiedt, met losse
-  beeld- en geluidssporen. Een noodversie in lage kwaliteit wordt niet bewaard; dan
-  probeert Reprise het later opnieuw.
-- De gedownloade versie wordt vergeleken met de hoogste kwaliteit die voor de video
-  beschikbaar was. Alleen na een echte vergelijking staat er *confirmed best available*.
-- 24 uur en 1 uur van tevoren volgt een controle: yt-dlp actueel, map- en cookietoegang
-  in orde, genoeg schijfruimte en de link werkt nog. Zo zie je problemen terwijl er nog
-  tijd is om ze op te lossen.
-- Meldt yt-dlp aan het eind van een uitzending een fout terwijl de opname wel compleet
-  is, dan herkent Reprise dat en gaat het gewoon verder.
-- Tijdens een download gaat de Mac niet in slaap.
+- Shortly before the scheduled time, Reprise starts checking the video's status.
+- As soon as the premiere goes live, recording starts immediately, from the beginning of
+  the broadcast.
+- Then Reprise waits until YouTube offers the VOD in full quality, with separate video and
+  audio tracks. A low-quality fallback version is never kept; Reprise tries again later.
+- The downloaded version is compared with the highest quality that was available for the
+  video. Only after a real comparison does it say *confirmed best available*.
+- 24 hours and 1 hour beforehand there's a check: yt-dlp up to date, folder and cookie
+  access fine, enough disk space and the link still works. That way you see problems
+  while there's still time to fix them.
+- If yt-dlp reports an error at the end of a broadcast while the recording is actually
+  complete, Reprise recognises that and carries on.
+- The Mac doesn't go to sleep during a download.
 
-## Meldingen
+## Notifications
 
-Plak in Settings een Application Token en User Key van [Pushover](https://pushover.net)
-voor pushmeldingen op je telefoon: première live, download klaar of mislukt, en de
-controles van tevoren. Gewone macOS-meldingen werken zonder instellingen.
+Paste an Application Token and User Key from [Pushover](https://pushover.net) in
+Settings to get push notifications on your phone: premiere live, download finished or
+failed, and the checks beforehand. Regular macOS notifications work without any setup.
 
-## Privacy en verbindingen
+## Privacy and connections
 
-Reprise praat alleen met YouTube (via yt-dlp), met Pushover als je dat instelt, en met
-GitHub voor updates. Cookies worden lokaal door yt-dlp gelezen en niet verstuurd naar
-andere partijen. Er is geen account, geen analytics en geen server van Reprise zelf.
+Reprise only talks to YouTube (through yt-dlp), to Pushover if you set it up, and to
+GitHub for updates. Cookies are read locally by yt-dlp and never sent to anyone else.
+There's no account, no analytics and no server of Reprise's own.
 
-## Gegevens
+## Data
 
-- Lijst, instellingen en logboek: `~/Library/Application Support/Reprise/`
-- Opnames: `~/Downloads/Reprise/` (aan te passen in Settings)
+- List, settings and log: `~/Library/Application Support/Reprise/`
+- Recordings: `~/Downloads/Reprise/` (can be changed in Settings)
 
-## Bouwen
+## Building
 
-Xcode Command Line Tools en een Apple Silicon Mac zijn nodig:
+Xcode Command Line Tools and an Apple Silicon Mac are required:
 
 ```sh
 git clone https://github.com/reprise-labs/reprise.git
@@ -104,15 +103,14 @@ cd reprise
 ./install.sh
 ```
 
-`install.sh` bouwt de app, plaatst hem in `/Applications/Reprise.app`, voegt Sparkle
-toe, ondertekent hem en start hem (opnieuw). De eerste keer is internet nodig om
-Sparkle op te halen.
+`install.sh` builds the app, places it in `/Applications/Reprise.app`, embeds Sparkle,
+signs it and (re)starts it. The first build needs internet access to fetch Sparkle.
 
-### Volledige schijftoegang behouden na een nieuwe build
+### Keeping Full Disk Access after a rebuild
 
-Een ad-hoc handtekening verandert bij elke build, waardoor macOS de Volledige
-schijftoegang vergeet. `install.sh` gebruikt daarom het lokale certificaat
-**Encore Local Signing** als dat bestaat. Maak het één keer aan:
+An ad-hoc signature changes with every build, so macOS forgets Full Disk Access.
+`install.sh` therefore uses the local certificate **Encore Local Signing** if it exists.
+Create it once:
 
 ```sh
 WORKDIR=$(mktemp -d)
@@ -128,25 +126,25 @@ security import "$WORKDIR/encore.p12" -k "$HOME/Library/Keychains/login.keychain
 rm -rf "$WORKDIR"
 ```
 
-Kies bij de eerste vraag van `codesign` *Altijd toestaan*.
+Choose *Always Allow* the first time `codesign` asks.
 
-## Nieuwe versie uitbrengen
+## Releasing a new version
 
 ```sh
-scripts/release.sh --dry-run 1.6.76 "Releasenotes"   # alle controles, niets publiceren
-scripts/release.sh 1.6.76 "Releasenotes"             # echte release
+scripts/release.sh --dry-run 1.6.76 "Release notes"   # every check, publishes nothing
+scripts/release.sh 1.6.76 "Release notes"             # real release
 ```
 
-Het script controleert eerst of alles klaar is en of er geen opname loopt. Daarna
-bouwt het de app, maakt en ondertekent het de zip, maakt het de GitHub-release en
-werkt het pas daarna `appcast.xml` bij, zodat bestaande installaties de update nooit
-zien voordat het bestand er staat.
+The script first checks that everything is ready and that no recording is running. Then
+it builds the app, creates and signs the zip, creates the GitHub release and only after
+that updates `appcast.xml`, so existing installs never see the update before the file is
+there.
 
 ## Reprise Labs
 
-Reprise is een apart project naast [Sleeve](https://github.com/reprise-labs/sleeve).
-De twee apps hebben eigen versies en downloads.
+Reprise is a separate project alongside [Sleeve](https://github.com/reprise-labs/sleeve).
+The two apps have their own versions and downloads.
 
-## Licentie
+## License
 
 [MIT](LICENSE)
