@@ -32,19 +32,23 @@ final class StatusItemController: NSObject {
         }
         .store(in: &cancellables)
 
-        // NSHostingController, not a bare NSHostingView as contentView: ContentView
-        // installs a SwiftUI toolbar, and only a hosting *controller* reliably feeds
-        // that toolbar's height back into the safe area. With a bare view the top
-        // inset was sometimes 0 and the page header ("Scheduled" + Add premiere)
-        // slid under the toolbar (reported 7-11-2026, screenshot).
+        // .fullSizeContentView is required, not cosmetic: ContentView's NavigationSplitView
+        // installs an NSTitlebarBackgroundView (toolbar-height, with a scroll-pocket blur)
+        // at the top of every split item, assuming that strip lies *under* the toolbar —
+        // which is how every SwiftUI-created window is set up. Without this flag the split
+        // view starts below the toolbar, so that strip covered the page header instead:
+        // the dark band over "Scheduled" + Add premiere (Media Server, macOS 27.0, dark;
+        // confirmed 7-11-2026 by dumping the live view tree and toggling the flag in lldb).
+        // SwiftUI's safe area keeps the page content below the toolbar.
         let hosting = NSHostingController(rootView: ContentView())
         hosting.sizingOptions = []
-        // Matches ContentView's dashboard-sized minimum exactly. AppKit does not
-        // reliably grow an initial content rect to a SwiftUI minimum on first open,
-        // so this must stay in step with ContentView's 760 × 620 floor.
+        // ContentView's 760 × 620 floor is measured inside SwiftUI's safe area (below
+        // the 52 pt toolbar), so with full-size content the window ends up 672 pt tall,
+        // the same as before. This must stay in step with that 620: AppKit does not
+        // reliably grow an initial content rect to a SwiftUI minimum on first open.
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
