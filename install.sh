@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds reprise_new and installs it next to the existing Reprise app, signed with the persistent
+# Builds Reprise and installs it into /Applications, signed with the persistent
 # local "Encore Local Signing" certificate (created 26-09-2026 in the login
 # keychain, kept under its original name — it's an internal signing identity,
 # never user-visible, so renaming it would just mean redoing the one-time
@@ -19,8 +19,8 @@ set -e
 cd "$(dirname "$0")"
 
 IDENTITY="Encore Local Signing"
-APP="/Applications/reprise_new.app"
-EXECUTABLE_NAME="reprise_new"
+APP="/Applications/Reprise.app"
+EXECUTABLE_NAME="Reprise"
 
 # --build-system native: the default "swiftbuild" engine (XCBuild-based, standard since
 # Swift 6) needs resources that only ship inside a full Xcode.app — on a Mac with just the
@@ -90,10 +90,10 @@ ls "$APP/Contents/MacOS/$EXECUTABLE_NAME".backup-* 2>/dev/null | sort -r | tail 
 # defeated if the fallback fires when it doesn't need to.
 if security find-certificate -c "$IDENTITY" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1; then
     codesign --force --deep -s "$IDENTITY" "$APP"
-    echo "Installed and restarted reprise_new, signed with '$IDENTITY'."
+    echo "Installed and restarted Reprise, signed with '$IDENTITY'."
 else
     codesign --force --deep -s - "$APP"
-    echo "Installed and restarted reprise_new with an ad-hoc signature (no '$IDENTITY' identity"
+    echo "Installed and restarted Reprise with an ad-hoc signature (no '$IDENTITY' identity"
     echo "found in this Mac's keychain). This works, but macOS will ask you to re-grant Full"
     echo "Disk Access after every rebuild until you set up a persistent signing identity —"
     echo "see the README section \"Keeping Full Disk Access across rebuilds\"."

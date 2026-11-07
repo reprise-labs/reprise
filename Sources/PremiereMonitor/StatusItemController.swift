@@ -52,7 +52,7 @@ final class StatusItemController: NSObject {
             backing: .buffered,
             defer: false
         )
-        window.title = "reprise_new"
+        window.title = "Reprise"
         window.contentViewController = hosting
         // contentViewController resizes the window to the controller's view; put
         // back the dashboard-sized frame the comment above relies on.
@@ -210,16 +210,16 @@ final class StatusItemController: NSObject {
         warnings: [String: String], videos: [MonitoredVideo], downloading: MonitoredVideo?, progress: [UUID: String]
     ) -> String {
         if let firstProblem = warnings.values.first {
-            return "reprise_new — ⚠️ \(firstProblem)"
+            return "Reprise — ⚠️ \(firstProblem)"
         }
         if let downloading {
             let pct = progress[downloading.id].map { " (\($0))" } ?? ""
-            return "reprise_new — downloading: \(downloading.label)\(pct)"
+            return "Reprise — downloading: \(downloading.label)\(pct)"
         }
         if let next = videos.filter({ $0.status != .done }).min(by: { $0.scheduledDate < $1.scheduledDate }) {
-            return "reprise_new — next: \(next.label) (\(next.scheduledDate.formatted(date: .abbreviated, time: .shortened)))"
+            return "Reprise — next: \(next.label) (\(next.scheduledDate.formatted(date: .abbreviated, time: .shortened)))"
         }
-        return "reprise_new — no upcoming premieres"
+        return "Reprise — no upcoming premieres"
     }
 
     private var ownedWindows: [NSWindow] {
@@ -281,9 +281,9 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(.separator())
-        let openItem = menu.addItem(withTitle: "Open reprise_new", action: #selector(openFromQuickMenu), keyEquivalent: "")
+        let openItem = menu.addItem(withTitle: "Open Reprise", action: #selector(openFromQuickMenu), keyEquivalent: "")
         openItem.target = self
-        let quitItem = menu.addItem(withTitle: "Quit reprise_new", action: #selector(quitFromQuickMenu), keyEquivalent: "")
+        let quitItem = menu.addItem(withTitle: "Quit Reprise", action: #selector(quitFromQuickMenu), keyEquivalent: "")
         quitItem.target = self
 
         NSMenu.popUpContextMenu(menu, with: event, for: button)

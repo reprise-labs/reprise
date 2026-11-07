@@ -68,7 +68,7 @@ final class MonitorEngine: ObservableObject {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
         let downloadsBase = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-        return downloadsBase.appendingPathComponent("reprise_new", isDirectory: true)
+        return downloadsBase.appendingPathComponent("Reprise", isDirectory: true)
     }
 
     private var checkLeadTime: TimeInterval { settings.checkLeadMinutes * 60 }
@@ -80,7 +80,7 @@ final class MonitorEngine: ObservableObject {
         self.videos = Store.load()
         self.channels = Store.loadChannels()
         self.discoveredVideos = Store.loadDiscovered()
-        log("reprise_new started. Download folder: \(downloadRoot.path)")
+        log("Reprise started. Download folder: \(downloadRoot.path)")
         trashOldAppBackups()
         checkDownloadFolderWritable()
         checkCookieBrowserAccess()

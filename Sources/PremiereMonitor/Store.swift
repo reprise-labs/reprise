@@ -2,12 +2,9 @@ import Foundation
 import Darwin
 
 enum Store {
-    /// This side-by-side build must never share settings, locks, or its tracked list with
-    /// the existing Reprise app. A separate support folder lets both applications run
-    /// independently without duplicate recordings or one instance blocking the other.
     static let appSupportDir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("reprise_new", isDirectory: true)
+        let dir = base.appendingPathComponent("Reprise", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()

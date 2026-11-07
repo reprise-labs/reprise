@@ -276,7 +276,7 @@ struct SettingsView: View {
                 Text("Download location")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 HStack {
-                    Text(customDownloadPath.isEmpty ? "Default: ~/Downloads/reprise_new" : customDownloadPath)
+                    Text(customDownloadPath.isEmpty ? "Default: ~/Downloads/Reprise" : customDownloadPath)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -546,7 +546,7 @@ struct SettingsView: View {
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("reprise_new \(engine.currentVersion)")
+                Text("Reprise \(engine.currentVersion)")
                     .font(.system(size: 15, weight: .semibold))
 
                 // Update checking/downloading/installing itself is entirely Sparkle's own

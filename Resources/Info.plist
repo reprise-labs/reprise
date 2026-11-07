@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
-	<string>reprise_new</string>
+	<string>Reprise</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon-reprise-new-v2</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.media.reprise-new</string>
+	<string>com.media.reprise</string>
 	<key>CFBundleDisplayName</key>
-	<string>reprise_new</string>
+	<string>Reprise</string>
 	<key>CFBundleName</key>
-	<string>reprise_new</string>
+	<string>Reprise</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
 	<key>SUPublicEDKey</key>
 	<string>Q9JYYtA7Y1AhvfPPNhtEfEUIV1HpOOGrqdXzd7z2/Hc=</string>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>

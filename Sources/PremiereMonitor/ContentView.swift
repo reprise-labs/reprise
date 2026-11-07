@@ -271,7 +271,7 @@ struct ContentView: View {
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("reprise_new")
+        .navigationTitle("Reprise")
     }
 
     private var incomingContent: some View {
@@ -346,7 +346,7 @@ struct ContentView: View {
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("reprise_new")
+        .navigationTitle("Reprise")
     }
 
     private var recordingsContent: some View {
@@ -387,7 +387,7 @@ struct ContentView: View {
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("reprise_new")
+        .navigationTitle("Reprise")
     }
 
     private func pageHeader(title: String, subtitle: String) -> some View {
