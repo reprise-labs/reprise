@@ -272,6 +272,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("reprise_new")
+        .topScrollEdgeEffectHidden()
     }
 
     private var incomingContent: some View {
@@ -347,6 +348,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("reprise_new")
+        .topScrollEdgeEffectHidden()
     }
 
     private var recordingsContent: some View {
@@ -388,6 +390,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("reprise_new")
+        .topScrollEdgeEffectHidden()
     }
 
     private func pageHeader(title: String, subtitle: String) -> some View {
@@ -708,6 +711,9 @@ private struct CompletedVideoRow: View {
                     if let summary = video.vodVersionSummary {
                         Label(summary, systemImage: "film")
                             .textSelection(.enabled)
+                            // The version is the point of this row: never truncate
+                            // it ("25…"); let the confirmation shorten instead.
+                            .layoutPriority(1)
                     }
                     switch video.qualityConfirmed {
                     case true?:
@@ -917,5 +923,20 @@ private extension View {
             .foregroundStyle(.secondary)
             .padding(.top, 28)
             .padding(.bottom, 10)
+    }
+}
+
+private extension View {
+    /// macOS 26+ draws a blurred "scroll edge effect" under the toolbar. In this
+    /// AppKit-hosted window it sometimes kicked in while the page was at rest,
+    /// blurring the "Scheduled" header and Add premiere button (reported
+    /// 7-11-2026 on the Media Server). The pages are short, so no blur is needed.
+    @ViewBuilder
+    func topScrollEdgeEffectHidden() -> some View {
+        if #available(macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
     }
 }
