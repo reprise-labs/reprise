@@ -699,10 +699,31 @@ private struct CompletedVideoRow: View {
                 HStack(spacing: 7) {
                     Label("LIVE + VOD", systemImage: "checkmark.circle.fill")
                     if let fileSizeText { Text(fileSizeText) }
-                    if video.qualityConfirmed == true { Text("Best available confirmed") }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                // Which version actually landed, e.g. "1080p Premium · 1920×1080 ·
+                // VP9 · 25 fps", plus the check against what YouTube really offered.
+                HStack(spacing: 7) {
+                    if let summary = video.vodVersionSummary {
+                        Label(summary, systemImage: "film")
+                            .textSelection(.enabled)
+                    }
+                    switch video.qualityConfirmed {
+                    case true?:
+                        Label("Best available confirmed", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                    case false?:
+                        let expected = video.vodVersion?.expectedHeight.map { " (\($0)p was available)" } ?? ""
+                        Label("Lower than available\(expected)", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    case nil:
+                        EmptyView()
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
             Spacer()
             Button("Show in Finder", action: onReveal)

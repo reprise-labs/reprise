@@ -173,8 +173,27 @@ struct MonitoredVideo: Identifiable, Codable, Equatable {
     /// downloading a second multi-GB file "just in case" on every premiere would
     /// be a wasteful default for a rare, often visually unnoticeable difference.
     var downloadAltPremiumCodec: Bool? = nil
+    /// Exactly which version of the VOD landed on disk (resolution, codec, fps,
+    /// yt-dlp format), so the Recordings list can show it — not only "best
+    /// available confirmed". Optional for the same decode-compatibility reason
+    /// as the flags above; recordings from before this field existed fall back
+    /// to the "[VOD] [1080p Premium]" label already baked into the filename.
+    var vodVersion: DownloadedVersion? = nil
 
     var youtubeID: String? { extractYouTubeID(from: url) }
+
+    /// Version summary for display, e.g. "1080p Premium · 1920×1080 · VP9 · 25 fps".
+    var vodVersionSummary: String? {
+        if let summary = vodVersion?.summary { return summary }
+        // Fallback for older recordings: the quality label sits right after the
+        // "[VOD]" tag in the filename (see the rename in MonitorEngine.downloadVideo).
+        guard let name = finalFilePath.map({ URL(fileURLWithPath: $0).lastPathComponent }),
+              let tag = name.range(of: "[VOD] [") else { return nil }
+        let rest = name[tag.upperBound...]
+        guard let end = rest.firstIndex(of: "]") else { return nil }
+        let label = String(rest[..<end])
+        return label.isEmpty ? nil : label
+    }
 
     /// YouTube's predictable thumbnail CDN path — no API call needed, just the video ID.
     var thumbnailURL: URL? {
@@ -300,5 +319,61 @@ struct AppSettings: Codable, Equatable {
 
     var defaultQualityResolved: VideoQuality {
         defaultQuality.flatMap(VideoQuality.init(rawValue:)) ?? .best
+    }
+}
+
+/// The concrete version of a downloaded file, read from yt-dlp's own format list
+/// for the format that actually landed (not the quality that was *requested*).
+struct DownloadedVersion: Codable, Equatable {
+    /// yt-dlp format id, e.g. "616+251" (video+audio).
+    var formatId: String?
+    /// Cleaned format_note of the video track, e.g. "1080p Premium".
+    var qualityLabel: String?
+    var width: Int?
+    var height: Int?
+    /// Friendly codec name: "H.264", "VP9" or "AV1" (raw string if unknown).
+    var codec: String?
+    var fps: Double?
+    /// Highest height that was really available for this video + quality choice.
+    var expectedHeight: Int?
+
+    var summary: String {
+        var parts: [String] = []
+        if let qualityLabel { parts.append(qualityLabel) } else if let height { parts.append("\(height)p") }
+        if let width, let height { parts.append("\(width)×\(height)") }
+        if let codec { parts.append(codec) }
+        if let fps, fps > 0 {
+            parts.append(fps.rounded() == fps ? "\(Int(fps)) fps" : String(format: "%.2f fps", fps))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    static func friendlyCodec(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty, raw != "none" else { return nil }
+        let lower = raw.lowercased()
+        if lower.hasPrefix("avc1") || lower.hasPrefix("h264") { return "H.264" }
+        if lower.hasPrefix("vp09") || lower.hasPrefix("vp9") { return "VP9" }
+        if lower.hasPrefix("av01") { return "AV1" }
+        if lower.hasPrefix("hvc1") || lower.hasPrefix("hev1") { return "HEVC" }
+        return raw
+    }
+
+    /// Builds the version from yt-dlp's pre-download metadata: looks up the video
+    /// part of `formatId` ("616" in "616+251") in meta["formats"].
+    static func from(meta: [String: Any], formatId: String?, qualityLabel: String?, expectedHeight: Int?) -> DownloadedVersion {
+        var version = DownloadedVersion(formatId: formatId, qualityLabel: qualityLabel, expectedHeight: expectedHeight)
+        let formats = meta["formats"] as? [[String: Any]] ?? []
+        let ids = (formatId ?? "").split(separator: "+").map(String.init)
+        // The video track is whichever listed id has a real vcodec.
+        let videoFormat = ids.lazy.compactMap { id in
+            formats.first { ($0["format_id"] as? String) == id && DownloadedVersion.friendlyCodec($0["vcodec"] as? String) != nil }
+        }.first
+        if let f = videoFormat {
+            version.width = f["width"] as? Int
+            version.height = f["height"] as? Int
+            version.codec = friendlyCodec(f["vcodec"] as? String)
+            version.fps = (f["fps"] as? Double) ?? (f["fps"] as? Int).map(Double.init)
+        }
+        return version
     }
 }

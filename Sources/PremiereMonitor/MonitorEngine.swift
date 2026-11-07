@@ -2831,7 +2831,12 @@ final class MonitorEngine: ObservableObject {
             v.vodDone = ok
             if let path { v.finalFilePath = path }
             v.status = ok ? .done : .vodPending
-            if ok { v.qualityConfirmed = qualityConfirmed }
+            if ok {
+                v.qualityConfirmed = qualityConfirmed
+                v.vodVersion = DownloadedVersion.from(
+                    meta: meta, formatId: formatId, qualityLabel: qualityLabel,
+                    expectedHeight: expectedMaxHeight(meta: meta, quality: v.quality ?? .best))
+            }
             if ok {
                 // "vod" is reachable two ways: after a successful LIVE capture (v.liveDone
                 // true), or directly — e.g. the live window was missed entirely (a permission
@@ -2843,7 +2848,8 @@ final class MonitorEngine: ObservableObject {
                 // that actually landed (see qualityLabel(fromFormatNote:)) — not from
                 // what quality was *requested* — so a Premium pick that silently fell
                 // back to Best available is reflected honestly here, not overclaimed.
-                let kwaliteit = qualityLabel.map { " [\($0)]" } ?? ""
+                let kwaliteit = (v.vodVersion?.summary).flatMap { $0.isEmpty ? nil : " [\($0)]" }
+                    ?? qualityLabel.map { " [\($0)]" } ?? ""
                 // The visible proof the user asked for (16-10-2026): not just "here's
                 // the quality label", but an explicit check against the real ceiling
                 // for this video, computed before the download even started (see

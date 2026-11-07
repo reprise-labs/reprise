@@ -32,7 +32,13 @@ final class StatusItemController: NSObject {
         }
         .store(in: &cancellables)
 
-        let hosting = NSHostingView(rootView: ContentView())
+        // NSHostingController, not a bare NSHostingView as contentView: ContentView
+        // installs a SwiftUI toolbar, and only a hosting *controller* reliably feeds
+        // that toolbar's height back into the safe area. With a bare view the top
+        // inset was sometimes 0 and the page header ("Scheduled" + Add premiere)
+        // slid under the toolbar (reported 7-11-2026, screenshot).
+        let hosting = NSHostingController(rootView: ContentView())
+        hosting.sizingOptions = []
         // Matches ContentView's dashboard-sized minimum exactly. AppKit does not
         // reliably grow an initial content rect to a SwiftUI minimum on first open,
         // so this must stay in step with ContentView's 760 × 620 floor.
@@ -43,7 +49,10 @@ final class StatusItemController: NSObject {
             defer: false
         )
         window.title = "reprise_new"
-        window.contentView = hosting
+        window.contentViewController = hosting
+        // contentViewController resizes the window to the controller's view; put
+        // back the dashboard-sized frame the comment above relies on.
+        window.setContentSize(NSSize(width: 760, height: 620))
         window.isReleasedWhenClosed = false
         self.mainWindow = window
 
