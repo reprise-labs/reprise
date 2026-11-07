@@ -33,23 +33,50 @@ struct SettingsView: View {
     @State private var cookieTestResult: String?
     @State private var cookieTestSucceeded = false
 
-    private enum SettingsTab: String, CaseIterable {
-        case general = "General", monitoring = "Monitoring", channels = "Channels", cookies = "Cookies",
-             quality = "Quality", notifications = "Notifications", about = "About"
+    /// Settings used to be spread across seven equally weighted mini-tabs. The two
+    /// settings people need in the same moment — browser login and Premium quality —
+    /// were especially easy to miss because they lived in different places. These
+    /// sections mirror the app's main sidebar: a small number of clear destinations,
+    /// with the YouTube workflow kept together.
+    private enum SettingsSection: CaseIterable, Identifiable {
+        case general, youtube, monitoring, channels, notifications, about
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .general: return "General"
+            case .youtube: return "YouTube"
+            case .monitoring: return "Monitoring"
+            case .channels: return "Channels"
+            case .notifications: return "Notifications"
+            case .about: return "About & support"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .general: return "Startup, appearance and downloads"
+            case .youtube: return "Browser login and download quality"
+            case .monitoring: return "When Reprise checks and alerts"
+            case .channels: return "Discover upcoming premieres"
+            case .notifications: return "Optional alerts when you are away"
+            case .about: return "Version, updates and diagnostics"
+            }
+        }
 
         var icon: String {
             switch self {
             case .general: return "gearshape"
+            case .youtube: return "play.rectangle.fill"
             case .monitoring: return "clock"
-            case .channels: return "person.2"
-            case .cookies: return "globe"
-            case .quality: return "slider.horizontal.3"
+            case .channels: return "dot.radiowaves.left.and.right"
             case .notifications: return "bell"
-            case .about: return "info.circle"
+            case .about: return "questionmark.circle"
             }
         }
     }
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedSection: SettingsSection = .general
 
     @State private var logCopied = false
     @State private var automaticallyChecksForUpdates: Bool
@@ -74,112 +101,144 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("Settings")
-                .font(.system(size: 17, weight: .semibold))
-                .padding(.top, 16)
-
-            // A hand-rolled tab strip instead of SwiftUI's TabView: on macOS 26, TabView
-            // tries to integrate tabs into the title bar and collapses into a hidden ">>"
-            // overflow menu when that doesn't fit cleanly in a plain AppKit-hosted window
-            // like this one — found 27-09-2026, the tabs were invisible except via that
-            // chevron. A plain row of buttons has no such adaptive behavior to fight.
-            HStack(spacing: 4) {
-                ForEach(SettingsTab.allCases, id: \.self) { tab in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedTab = tab
-                        }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 15))
-                            Text(tab.rawValue)
-                                .font(.system(size: 12))
-                                // Was wrapping "Notifications" onto its own second line once
-                                // the Channels tab brought the total to 6 — each tab's share of
-                                // the fixed-width strip got too narrow for its longest label at
-                                // 12pt (01-10-2026). Shrinking instead of wrapping keeps every
-                                // tab's label on one line regardless of how many tabs there are.
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(selectedTab == tab ? Color.accentColor.opacity(0.15) : Color.clear)
-                        .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .animation(.easeInOut(duration: 0.2), value: selectedTab)
-                        // Without this, .buttonStyle(.plain) only makes the icon/text glyphs
-                        // themselves clickable, not the padded/colored area around them —
-                        // exactly the "have to click precisely on the icon" symptom.
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tab.rawValue)
-                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-
-            ScrollView {
-                Group {
-                    switch selectedTab {
-                    case .general: generalTab
-                    case .monitoring: monitoringTab
-                    case .channels: channelsTab
-                    case .cookies: cookiesTab
-                    case .quality: qualityTab
-                    case .notifications: notificationsTab
-                    case .about: aboutTab
-                    }
-                }
-                // Without this, a tab whose content is all short Text/Button views (no
-                // full-width TextField or Picker to stretch it) sizes to its own narrow
-                // intrinsic width inside the ScrollView and then sits centered in the
-                // leftover space — Monitoring and About looked "randomly centered"
-                // while General/Channels/Cookies/Notifications looked fine purely by
-                // accident, because something in each of those already happened to be
-                // wide enough to fill the row (user feedback, 03-10-2026).
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .animation(.easeInOut(duration: 0.2), value: selectedTab)
-            }
-            // Tried .scrollDisabled(selectedTab == .about) here (03-10-2026) to kill the
-            // pointless rubber-band bounce on a tab that's supposed to always fit — but
-            // disabling scroll doesn't just stop the bounce, it also removes the only way
-            // to reach anything that doesn't quite fit. Content that's "supposed to fit"
-            // isn't a hard guarantee (font rendering, a long update-available string,
-            // whatever) — on this exact machine it turned out About's real content still
-            // slightly exceeded 480pt once the window-height bug below was fixed, and with
-            // scrolling off "Copy log to clipboard" became permanently unreachable with no
-            // scrollbar to even hint it was there. Worse than the bounce it was meant to
-            // fix, so reverted — scrolling stays enabled on every tab, always.
+        HStack(spacing: 0) {
+            settingsSidebar
 
             Divider()
-            HStack {
-                Spacer()
-                Button("Close") {
-                    StatusItemController.shared?.closeSettingsWindow()
+
+            VStack(spacing: 0) {
+                // YouTube is a short, deliberate setup flow. Giving it a ScrollView
+                // created the distracting elastic "empty page" bounce that made it feel
+                // like there was more to discover below. The longer operational pages
+                // keep scrolling so a smaller settings window can still reach everything.
+                if selectedSection == .youtube {
+                    settingsPageContent
+                        .frame(maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    ScrollView {
+                        settingsPageContent
+                    }
                 }
-                Button("Save") {
-                    save()
-                    StatusItemController.shared?.closeSettingsWindow()
+
+                Divider()
+                HStack(spacing: 12) {
+                    Text("Changes apply when you save.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Close") {
+                        StatusItemController.shared?.closeSettingsWindow()
+                    }
+                    Button("Save changes") {
+                        save()
+                        StatusItemController.shared?.closeSettingsWindow()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
                 }
-                .keyboardShortcut(.defaultAction)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
             }
-            .padding(20)
         }
-        // minWidth, not a flat width: the window itself is declared .resizable (see
-        // showSettingsWindow) so a user can drag it wider — a flat width here fought that,
-        // leaving the dragged-out window frame with dead empty space on the right while the
-        // content stayed pinned at 460 (found during a UI audit, 11-10-2026). minWidth keeps
-        // the original "was a flat 640 regardless of tab, short tabs left a dead gap above
-        // Close/Save" fix (each tab's own ScrollView still caps comfortably at content size)
-        // while letting the window actually use extra width if the user asks for it.
-        .frame(minWidth: 460)
-        .frame(maxHeight: 480)
+        .frame(minWidth: 760, minHeight: 560)
+    }
+
+    private var settingsPageContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            settingsPageHeader
+            selectedContent
+        }
+        .frame(maxWidth: 620, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(30)
+    }
+
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Settings")
+                .font(.title3.weight(.semibold))
+                .padding(.bottom, 14)
+
+            Text("SET UP")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 2)
+            settingsSidebarButton(.general)
+            settingsSidebarButton(.youtube)
+
+            Text("AUTOMATION")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 10)
+                .padding(.top, 16)
+                .padding(.bottom, 2)
+            settingsSidebarButton(.monitoring)
+            settingsSidebarButton(.channels)
+            settingsSidebarButton(.notifications)
+
+            Spacer()
+            settingsSidebarButton(.about)
+        }
+        .padding(16)
+        .frame(width: 190, alignment: .leading)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func settingsSidebarButton(_ section: SettingsSection) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                selectedSection = section
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 18)
+                Text(section.title)
+                    .font(.system(size: 13, weight: selectedSection == section ? .semibold : .regular))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(selectedSection == section ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(selectedSection == section ? Color.accentColor.opacity(0.12) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
+    }
+
+    private var settingsPageHeader: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: selectedSection.icon)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 42, height: 42)
+                .background(Color.accentColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 11))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectedSection.title)
+                    .font(.title2.weight(.semibold))
+                Text(selectedSection.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.bottom, 26)
+    }
+
+    @ViewBuilder
+    private var selectedContent: some View {
+        switch selectedSection {
+        case .general: generalTab
+        case .youtube: youtubeTab
+        case .monitoring: monitoringTab
+        case .channels: channelsTab
+        case .notifications: notificationsTab
+        case .about: aboutTab
+        }
     }
 
     private var generalTab: some View {
@@ -217,7 +276,7 @@ struct SettingsView: View {
                 Text("Download location")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 HStack {
-                    Text(customDownloadPath.isEmpty ? "Default: ~/Downloads/Reprise" : customDownloadPath)
+                    Text(customDownloadPath.isEmpty ? "Default: ~/Downloads/reprise_new" : customDownloadPath)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -343,27 +402,23 @@ struct SettingsView: View {
         }
     }
 
-    private var cookiesTab: some View {
+    /// Browser access and the Premium choice are deliberately one page: a successful
+    /// browser-login test proves that Reprise can read YouTube, but it does not prove
+    /// that this particular account has Premium. Keeping the two steps together makes
+    /// that distinction explicit instead of leaving a new install looking broken.
+    private var youtubeTab: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Read YouTube login cookies from")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Picker("", selection: $cookieBrowserPreference) {
+            settingsCard(
+                title: "YouTube account",
+                subtitle: "Choose the browser where you are signed in to YouTube."
+            ) {
+                Picker("Browser", selection: $cookieBrowserPreference) {
                     Text("Automatic (Chrome, then Safari)").tag("auto")
                     Text("Chrome").tag("chrome")
                     Text("Safari").tag("safari")
                 }
-                .labelsHidden()
                 .pickerStyle(.menu)
-                Text("Only matters if you have both installed but are only logged into "
-                    + "YouTube in one of them — Automatic always prefers Chrome.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Diagnostics")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 HStack(spacing: 10) {
                     Button {
                         Task { await testCookies() }
@@ -371,70 +426,78 @@ struct SettingsView: View {
                         if isTestingCookies {
                             ProgressView().controlSize(.small).frame(width: 14, height: 14)
                         } else {
-                            Text("Test YouTube login")
+                            Label("Test YouTube login", systemImage: "checkmark.circle")
                         }
                     }
                     .disabled(isTestingCookies)
 
-                    Button("Log in to YouTube again") {
+                    Button("Open YouTube") {
                         engine.openYouTubeLogin()
                     }
-                    .help("Opens YouTube in your cookie browser. Log in there, then run the "
-                          + "test again.")
                 }
+
                 if let cookieTestResult {
-                    Text(cookieTestResult)
-                        .font(.system(size: 12))
+                    Label(cookieTestResult, systemImage: cookieTestSucceeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.subheadline)
                         .foregroundStyle(cookieTestSucceeded ? .green : .orange)
+                } else {
+                    Text("Test the connection after choosing a browser. This confirms that YouTube accepts the saved login.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
-        }
-    }
 
-    private var qualityTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("I have YouTube Premium", isOn: $hasYouTubePremium)
-                // Separate from the automatic detection (Look Up / a premiere actually
-                // downloading finding a "Premium" format) that set this flag before —
-                // that only ever happens per Mac once Reprise itself has witnessed it
-                // on some video, which meant a fresh install (even with the exact same
-                // Premium account's cookies) needed a one-off "trick it with a known
-                // video" step before the option appeared at all. Flipping it on here
-                // does the same thing directly, no detection ritual required. Automatic
-                // detection still also flips it on by itself if it happens to notice —
-                // this toggle just means you don't have to wait for or force that.
-                Text("Unlocks 1080p Premium in the quality picker below. Still only "
-                    + "actually used on videos YouTube itself offers it for — otherwise "
-                    + "it quietly downloads as Best available.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Default quality for new premieres")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                Picker("", selection: $defaultQuality) {
-                    if hasYouTubePremium {
-                        Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
-                    }
-                    ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
-                        Text(q.displayName).tag(q)
+            settingsCard(
+                title: "Premium quality",
+                subtitle: "This is separate from the login test above."
+            ) {
+                Toggle(isOn: $hasYouTubePremium) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("I have YouTube Premium")
+                            .font(.body.weight(.medium))
+                        Text("Adds 1080p Premium to the quality menu when you add a premiere.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                Text("Always changeable per premiere in the Add screen.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                .toggleStyle(.switch)
+                .onChange(of: hasYouTubePremium) { _, enabled in
+                    if !enabled, defaultQuality == .premium { defaultQuality = .best }
+                }
+
+                if hasYouTubePremium {
+                    Divider()
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Default for new premieres")
+                                .font(.body.weight(.medium))
+                            Text("You can still change this for each premiere.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("Default quality", selection: $defaultQuality) {
+                            Text(VideoQuality.premium.displayName).tag(VideoQuality.premium)
+                            ForEach(VideoQuality.allCases.filter { $0 != .premium }) { q in
+                                Text(q.displayName).tag(q)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 180)
+                    }
+                } else {
+                    Label("Turn this on if the browser above is signed in to a YouTube Premium account.", systemImage: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Text("The exact quality list only shows once a video is a finished VOD; "
-                + "before that, every option is offered and resolved for real at download time.")
-                .font(.system(size: 12))
+            Label("YouTube only provides the Premium track for eligible videos. If it is unavailable when the premiere is downloaded, Reprise uses Best available instead.", systemImage: "checkmark.shield")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
         }
     }
 
@@ -444,7 +507,7 @@ struct SettingsView: View {
                 Text("Pushover credentials")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                 Text("Optional — push notifications when you're away from this Mac. Get your "
-                    + "keys at pushover.net.")
+                    + "keys at pushover.net. You can test newly pasted keys immediately; saving first is not required.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -483,7 +546,7 @@ struct SettingsView: View {
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Reprise \(engine.currentVersion)")
+                Text("reprise_new \(engine.currentVersion)")
                     .font(.system(size: 15, weight: .semibold))
 
                 // Update checking/downloading/installing itself is entirely Sparkle's own
@@ -526,6 +589,29 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func settingsCard<Content: View>(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
     }
 
     @ViewBuilder
@@ -604,6 +690,11 @@ struct SettingsView: View {
     private func testNotification() {
         isTestingNotification = true
         notificationTestResult = nil
+        // Match the YouTube test above: test exactly what is currently visible in
+        // Settings, rather than only the last saved values. This also makes a first
+        // Pushover setup testable without the confusing save → reopen → test detour.
+        engine.settings.pushoverToken = pushoverToken.isEmpty ? nil : pushoverToken
+        engine.settings.pushoverUserKey = pushoverUserKey.isEmpty ? nil : pushoverUserKey
         engine.sendTestNotification { ok, detail in
             isTestingNotification = false
             notificationTestSucceeded = ok

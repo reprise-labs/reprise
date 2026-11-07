@@ -33,20 +33,16 @@ final class StatusItemController: NSObject {
         .store(in: &cancellables)
 
         let hosting = NSHostingView(rootView: ContentView())
-        // Matches ContentView's own .frame(minWidth: 620, minHeight: 560) exactly —
-        // a smaller initial contentRect here doesn't reliably get grown to that SwiftUI
-        // minimum on first open, so the window used to launch at a cramped 560x480
-        // (narrower *and* shorter than ContentView's own declared floor) regardless of
-        // what that floor said. Found 17-10-2026 raising videoListMaxHeight for easier
-        // scrolling with several tracked premieres queued — the new taller minHeight
-        // had no visible effect until this literal was updated to match it.
+        // Matches ContentView's dashboard-sized minimum exactly. AppKit does not
+        // reliably grow an initial content rect to a SwiftUI minimum on first open,
+        // so this must stay in step with ContentView's 760 × 620 floor.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Reprise"
+        window.title = "reprise_new"
         window.contentView = hosting
         window.isReleasedWhenClosed = false
         self.mainWindow = window
@@ -201,16 +197,16 @@ final class StatusItemController: NSObject {
         warnings: [String: String], videos: [MonitoredVideo], downloading: MonitoredVideo?, progress: [UUID: String]
     ) -> String {
         if let firstProblem = warnings.values.first {
-            return "Reprise — ⚠️ \(firstProblem)"
+            return "reprise_new — ⚠️ \(firstProblem)"
         }
         if let downloading {
             let pct = progress[downloading.id].map { " (\($0))" } ?? ""
-            return "Reprise — downloading: \(downloading.label)\(pct)"
+            return "reprise_new — downloading: \(downloading.label)\(pct)"
         }
         if let next = videos.filter({ $0.status != .done }).min(by: { $0.scheduledDate < $1.scheduledDate }) {
-            return "Reprise — next: \(next.label) (\(next.scheduledDate.formatted(date: .abbreviated, time: .shortened)))"
+            return "reprise_new — next: \(next.label) (\(next.scheduledDate.formatted(date: .abbreviated, time: .shortened)))"
         }
-        return "Reprise — no upcoming premieres"
+        return "reprise_new — no upcoming premieres"
     }
 
     private var ownedWindows: [NSWindow] {
@@ -272,9 +268,9 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(.separator())
-        let openItem = menu.addItem(withTitle: "Open Reprise", action: #selector(openFromQuickMenu), keyEquivalent: "")
+        let openItem = menu.addItem(withTitle: "Open reprise_new", action: #selector(openFromQuickMenu), keyEquivalent: "")
         openItem.target = self
-        let quitItem = menu.addItem(withTitle: "Quit Reprise", action: #selector(quitFromQuickMenu), keyEquivalent: "")
+        let quitItem = menu.addItem(withTitle: "Quit reprise_new", action: #selector(quitFromQuickMenu), keyEquivalent: "")
         quitItem.target = self
 
         NSMenu.popUpContextMenu(menu, with: event, for: button)
@@ -377,26 +373,17 @@ final class StatusItemController: NSObject {
         closeStrayWindows()
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 500),
+                contentRect: NSRect(x: 0, y: 0, width: 780, height: 600),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Settings"
             window.isReleasedWhenClosed = false
-            // Resizable, but not below what the content actually needs — without this a
-            // manual drag-to-shrink at some point earlier in the session (the window stays
-            // open/reused across the whole app run, not recreated fresh each time) left it
-            // smaller than About's content, forcing a real scrollbar there while every other
-            // tab still fit and showed none (user feedback, 03-10-2026: same build, same
-            // window, but a scrollbar on one machine and not the other — this is why).
-            // 500, not a bare 480: 480 turned out to be an exact-fit calculation with zero
-            // margin — on the machine that surfaced this bug, About's real content was a
-            // few pixels taller than 480 even after the fix, clipping "Copy log to
-            // clipboard" silently (scrolling is always enabled — see SettingsView — so the
-            // overflow at least would have been reachable, but there's no reason to run
-            // that close to the edge when a little headroom is free).
-            window.minSize = NSSize(width: 460, height: 500)
+            // Settings uses the same spacious sidebar/content layout as the main window.
+            // Keep it usable rather than letting a previously resized window collapse the
+            // navigation and turn every page into a scroll exercise.
+            window.minSize = NSSize(width: 760, height: 560)
             self.settingsWindow = window
         }
         // minSize above only stops it shrinking any further from here — doesn't undo a
@@ -404,10 +391,11 @@ final class StatusItemController: NSObject {
         // window itself is reused rather than recreated on every open. Grow it back up if
         // needed, same way minSize would have prevented in the first place; anchored so it
         // grows downward instead of the titlebar jumping.
-        if let window = settingsWindow, window.frame.height < 500 {
+        if let window = settingsWindow, window.frame.height < 560 || window.frame.width < 760 {
             var frame = window.frame
-            frame.origin.y -= (500 - frame.height)
-            frame.size.height = 500
+            frame.origin.y -= max(0, 560 - frame.height)
+            frame.size.width = max(760, frame.width)
+            frame.size.height = max(560, frame.height)
             window.setFrame(frame, display: false)
         }
         settingsWindow?.contentView = NSHostingView(rootView: SettingsView())

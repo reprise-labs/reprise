@@ -47,7 +47,7 @@ struct AddVideoView: View {
         self.discoveredVideoId = discovered.videoID
         _url = State(initialValue: discovered.url)
         _label = State(initialValue: discovered.title)
-        _scheduledDate = State(initialValue: Date().addingTimeInterval(3600))
+        _scheduledDate = State(initialValue: discovered.scheduledDate ?? Date().addingTimeInterval(3600))
         _quality = State(initialValue: MonitorEngine.shared.settings.defaultQualityResolved)
         _downloadAltPremiumCodec = State(initialValue: false)
     }

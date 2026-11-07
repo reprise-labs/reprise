@@ -2,17 +2,12 @@ import Foundation
 import Darwin
 
 enum Store {
-    /// One-time migration from the app's old name: if "Reprise" doesn't exist yet but
-    /// "Encore" does, copy it over (copy, not move — the old folder is left in place as an
-    /// automatic backup) so the rename doesn't lose the tracked list, settings, or log.
-    /// Only fires once; every launch after the first sees "Reprise" already there.
+    /// This side-by-side build must never share settings, locks, or its tracked list with
+    /// the existing Reprise app. A separate support folder lets both applications run
+    /// independently without duplicate recordings or one instance blocking the other.
     static let appSupportDir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("Reprise", isDirectory: true)
-        let legacyDir = base.appendingPathComponent("Encore", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: dir.path), FileManager.default.fileExists(atPath: legacyDir.path) {
-            try? FileManager.default.copyItem(at: legacyDir, to: dir)
-        }
+        let dir = base.appendingPathComponent("reprise_new", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()

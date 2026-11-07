@@ -68,7 +68,7 @@ final class MonitorEngine: ObservableObject {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
         let downloadsBase = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-        return downloadsBase.appendingPathComponent("Reprise", isDirectory: true)
+        return downloadsBase.appendingPathComponent("reprise_new", isDirectory: true)
     }
 
     private var checkLeadTime: TimeInterval { settings.checkLeadMinutes * 60 }
@@ -80,7 +80,7 @@ final class MonitorEngine: ObservableObject {
         self.videos = Store.load()
         self.channels = Store.loadChannels()
         self.discoveredVideos = Store.loadDiscovered()
-        log("Reprise started. Download folder: \(downloadRoot.path)")
+        log("reprise_new started. Download folder: \(downloadRoot.path)")
         trashOldAppBackups()
         checkDownloadFolderWritable()
         checkCookieBrowserAccess()
@@ -835,14 +835,47 @@ final class MonitorEngine: ObservableObject {
         for entry in upcoming where newIDs.contains(entry["id"] as? String ?? "") {
             guard let videoID = entry["id"] as? String else { continue }
             let title = entry["title"] as? String ?? videoID
+            // The fast channel listing tells us that something is upcoming but normally
+            // omits the scheduled timestamp. Fetch details only for a genuinely new
+            // discovery, keeping regular channel checks fast while giving Incoming the
+            // two dates that make it useful: when it was found and when it will air.
+            let scheduledDate: Date?
+            if let dateFromListing = premiereDate(in: entry) {
+                scheduledDate = dateFromListing
+            } else {
+                scheduledDate = await scheduledPremiereDate(for: videoID)
+            }
             discoveredVideos.append(DiscoveredVideo(
                 videoID: videoID, title: title,
-                channelName: channels[index].name ?? channel.url, channelId: channel.id
+                channelName: channels[index].name ?? channel.url,
+                channelId: channel.id,
+                discoveredAt: Date(),
+                scheduledDate: scheduledDate
             ))
-            log("📡 New premiere found on \(channels[index].name ?? channel.url): \(title)")
+            let schedule = scheduledDate.map { " — premieres \($0.formatted(date: .abbreviated, time: .shortened))" } ?? ""
+            log("📡 New premiere found on \(channels[index].name ?? channel.url): \(title)\(schedule)")
         }
         channels[index].knownUpcomingIDs = Array(upcomingIDs)
         channels[index].lastChecked = Date()
+    }
+
+    /// Read the release time from either a channel-listing entry or a full video
+    /// metadata response. yt-dlp may decode an epoch as Int or Double depending on
+    /// which extractor path supplied it.
+    private func premiereDate(in metadata: [String: Any]) -> Date? {
+        if let timestamp = metadata["release_timestamp"] as? Double {
+            return Date(timeIntervalSince1970: timestamp)
+        }
+        if let timestamp = metadata["release_timestamp"] as? Int {
+            return Date(timeIntervalSince1970: Double(timestamp))
+        }
+        return nil
+    }
+
+    private func scheduledPremiereDate(for videoID: String) async -> Date? {
+        let result = await fetchMeta(url: "https://www.youtube.com/watch?v=\(videoID)")
+        guard let metadata = result.meta else { return nil }
+        return premiereDate(in: metadata)
     }
 
     /// Clears finished premieres from the tracked list. Only the list entry goes —

@@ -236,6 +236,12 @@ struct DiscoveredVideo: Identifiable, Codable, Equatable {
     var title: String
     var channelName: String
     var channelId: UUID
+    /// When Reprise first saw this announcement on the channel. Optional so the
+    /// already-saved incoming list from older versions keeps decoding cleanly.
+    var discoveredAt: Date? = nil
+    /// The actual YouTube premiere time, looked up when a new announcement is found.
+    /// A channel's flat listing often omits it, so this is separate from discoveredAt.
+    var scheduledDate: Date? = nil
 
     var url: String { "https://www.youtube.com/watch?v=\(videoID)" }
 }

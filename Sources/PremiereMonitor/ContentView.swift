@@ -1,425 +1,515 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
+/// Reprise's main window is deliberately a calm status view, not a terminal with a
+/// video list attached. The job is to answer one question at a glance: “is my next
+/// premiere ready?” Detailed diagnostics remain available under Activity when needed.
 struct ContentView: View {
     @ObservedObject private var engine = MonitorEngine.shared
 
-    /// Which half of the (formerly single, now tabbed) top pane is showing — split out
-    /// 01-10-2026 because the old single "Found on watched channels" banner pushed the
-    /// tracked list down every time a channel found something, instead of living in its
-    /// own clearly-separate place.
-    private enum MainSection { case tracked, upcoming }
-    @State private var selectedSection: MainSection = .tracked
-    @State private var showCheckResult = false
-    @State private var isRefreshingUpcoming = false
-
-    private var sortedVideos: [MonitoredVideo] {
-        engine.videos.sorted { $0.scheduledDate < $1.scheduledDate }
+    private enum SidebarSection: Hashable {
+        case scheduled
+        case incoming
+        case recordings
     }
 
-    @ViewBuilder
-    private func sectionTabButton(_ section: MainSection, title: String, badgeCount: Int?) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedSection = section
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.title2).bold()
-                    .foregroundStyle(selectedSection == section ? Color.primary : Color.secondary)
-                    // Without this, the badge capsule crowding the HStack made "Upcoming"
-                    // wrap onto two lines instead of staying on one (found 11-10-2026,
-                    // live-testing the discovered-channel Add flow) — fixedSize keeps it at
-                    // its natural single-line width regardless of how tight the row gets.
-                    .fixedSize()
-                if let badgeCount, badgeCount > 0 {
-                    Text("\(badgeCount)")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Color.red)
-                        .clipShape(Capsule())
-                }
-            }
-        }
-        .buttonStyle(.plain)
+    @State private var selectedSection: SidebarSection = .scheduled
+    @State private var activityIsExpanded = false
+    @State private var technicalLogIsExpanded = false
+    @State private var isRefreshingIncoming = false
+
+    private var scheduledVideos: [MonitoredVideo] {
+        engine.videos
+            .filter { $0.status != .done }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+    }
+
+    private var completedVideos: [MonitoredVideo] {
+        engine.videos
+            .filter { $0.status == .done }
+            .sorted { $0.scheduledDate > $1.scheduledDate }
     }
 
     private var isBlockedByPermissions: Bool {
-        engine.permissionWarnings["download-folder"] != nil || engine.permissionWarnings["cookie-access"] != nil
+        engine.permissionWarnings["download-folder"] != nil
+            || engine.permissionWarnings["cookie-access"] != nil
             || engine.permissionWarnings["external-tools"] != nil
     }
 
-    /// The video list pane used to have a flat .frame(minHeight: 260) regardless of how
-    /// many premieres were tracked — with just 1-2, that left a big blank gap below the
-    /// last row before the log section started (28-09-2026 feedback). Capping its max
-    /// height to roughly what the current rows actually need means VSplitView gives any
-    /// leftover window height to the log pane below instead, which can always use more
-    /// room. Still grows normally up to the cap once there's enough content to fill it.
-    ///
-    /// The cap itself was 260 (~3 rows) until 17-10-2026: with several premieres queued
-    /// up via channel watching, that meant scrolling inside a cramped ~3-row box even
-    /// though the window itself had room to grow — annoying enough on its own, worse
-    /// over a remote-desktop connection where trackpad/mouse scroll events don't always
-    /// land cleanly in a small inner scroll area (user report + screenshots, several
-    /// tracked premieres queued at once). Raised to 440 (~6 rows) so a realistic queue
-    /// is visible without scrolling at all; still only grows as large as the content
-    /// actually needs for the small-list case the original fix was about.
-    ///
-    /// Based on the larger of the two tabs' row counts, not just whichever is currently
-    /// selected — using only the active tab's count meant switching between Tracked and
-    /// Upcoming visibly resized this pane (and shifted the log below it) purely because
-    /// the two tabs happened to hold a different number of items, which read as broken
-    /// rather than intentional (user feedback, 03-10-2026, screenshots of the two tabs
-    /// at different heights with the log line landing in a different spot on each).
-    private var videoListMaxHeight: CGFloat {
-        let header: CGFloat = 56
-        let approxRowHeight: CGFloat = 72
-        let rowCount = max(sortedVideos.count, engine.discoveredVideos.count)
-        let content = header + CGFloat(max(rowCount, 1)) * approxRowHeight
-        return min(max(content, 160), 440)
-    }
-
-    /// Shared by the banner's "Test again" and the toolbar's shield button.
-    private func runChecks() {
-        Task {
-            await engine.runAllChecks()
-            withAnimation { showCheckResult = true }
-            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
-            withAnimation { showCheckResult = false }
+    private var healthSummary: String {
+        if engine.isCheckingAll { return "Checking readiness…" }
+        if !engine.permissionWarnings.isEmpty {
+            let count = engine.permissionWarnings.count
+            return "\(count) issue\(count == 1 ? "" : "s") need attention"
         }
-    }
-
-    private var testAgainButton: some View {
-        Button {
-            runChecks()
-        } label: {
-            if engine.isCheckingAll {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Testing…").font(.caption)
-                }
-            } else {
-                Label("Test again", systemImage: "arrow.clockwise").font(.caption)
-            }
+        if let lastCheck = engine.lastFullCheck {
+            return lastCheck.problems == 0
+                ? "All checks passed \(lastCheck.date.formatted(date: .omitted, time: .shortened))"
+                : "\(lastCheck.problems) issue\(lastCheck.problems == 1 ? "" : "s") need attention"
         }
-        .controlSize(.small)
-        .disabled(engine.isCheckingAll)
+        return "Ready to monitor"
     }
 
     var body: some View {
         if isBlockedByPermissions {
             PermissionGateView()
-                .frame(minWidth: 620, minHeight: 480)
+                .frame(minWidth: 680, minHeight: 520)
         } else {
             mainContent
         }
     }
 
     private var mainContent: some View {
-        VSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 18) {
-                    sectionTabButton(.tracked, title: "Tracked", badgeCount: nil)
-                    sectionTabButton(.upcoming, title: "Upcoming", badgeCount: engine.discoveredVideos.count)
-                    Spacer()
-
-                    if selectedSection == .upcoming {
-                        // .refreshable (pull-to-refresh) used to live on the Upcoming list
-                        // for exactly this — checking now instead of waiting up to a day —
-                        // but in a popover this short, macOS's refresh spinner had nowhere
-                        // proper to draw itself and rendered as a small clipped glitch, with
-                        // a stray scrollbar appearing even on the empty, nothing-to-scroll
-                        // state (user screenshot, 04-10-2026). A plain button sidesteps both.
-                        Button {
-                            guard !isRefreshingUpcoming else { return }
-                            isRefreshingUpcoming = true
-                            Task {
-                                await engine.checkChannels(force: true)
-                                isRefreshingUpcoming = false
-                            }
-                        } label: {
-                            if isRefreshingUpcoming {
-                                ProgressView().controlSize(.small).frame(width: 14, height: 14)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                        }
-                        .disabled(isRefreshingUpcoming)
-                        .contentShape(Rectangle())
-                        .help("Check watched channels now")
-                        .accessibilityLabel("Check watched channels now")
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detailContent
+        }
+        .navigationSplitViewStyle(.balanced)
+        .navigationSplitViewColumnWidth(min: 230, ideal: 250, max: 280)
+        .frame(minWidth: 760, minHeight: 620)
+        .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                Button {
+                    runChecks()
+                } label: {
+                    if engine.isCheckingAll {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Check readiness", systemImage: "checkmark.shield")
                     }
-
-                    Button {
-                        runChecks()
-                    } label: {
-                        if engine.isCheckingAll {
-                            ProgressView().controlSize(.small).frame(width: 14, height: 14)
-                        } else {
-                            Image(systemName: "checkmark.shield")
-                        }
-                    }
-                    .disabled(engine.isCheckingAll)
-                    .contentShape(Rectangle())
-                    .help("Test for problems")
-                    .accessibilityLabel("Test for problems")
-
-                    Button {
-                        engine.openDownloadFolder()
-                    } label: {
-                        Image(systemName: "folder")
-                    }
-                    .contentShape(Rectangle())
-                    .help("Open download folder")
-                    .accessibilityLabel("Open download folder")
-
-                    Button {
-                        confirmClearHistory()
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!engine.videos.contains { $0.status == .done })
-                    .contentShape(Rectangle())
-                    .help("Clear completed premieres from the list (downloaded files stay put)")
-                    .accessibilityLabel("Clear completed premieres")
-
-                    Button {
-                        StatusItemController.shared?.showSettingsWindow()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .contentShape(Rectangle())
-                    .help("Settings")
-                    .accessibilityLabel("Settings")
-
-                    Button {
-                        StatusItemController.shared?.showAddWindow()
-                    } label: {
-                        Label("Add", systemImage: "plus")
-                    }
-                    .contentShape(Rectangle())
-
-                    Button {
-                        confirmQuit()
-                    } label: {
-                        Image(systemName: "power")
-                    }
-                    .contentShape(Rectangle())
-                    .help("Quit Reprise")
-                    .accessibilityLabel("Quit Reprise")
                 }
-                .padding([.horizontal, .top])
+                .disabled(engine.isCheckingAll)
+                .help("Check folder access, browser cookies, yt-dlp, ffmpeg and disk space")
+
+                Button {
+                    engine.openDownloadFolder()
+                } label: {
+                    Label("Open downloads", systemImage: "folder")
+                }
+                .help("Open Reprise's download folder")
+
+                Button {
+                    StatusItemController.shared?.showSettingsWindow()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    StatusItemController.shared?.showAddWindow()
+                } label: {
+                    Label("Add premiere", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private var sidebar: some View {
+        // A selection-bound List looked right but did not reliably change the detail
+        // pane in this AppKit-hosted menu-bar window. These are direct buttons, so a
+        // click always changes the content instead of relying on List selection state.
+        VStack(alignment: .leading, spacing: 5) {
+            Text("YOUR PREMIERES")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 3)
+
+            sidebarButton(
+                .scheduled,
+                title: "Scheduled",
+                icon: "calendar",
+                count: scheduledVideos.count
+            )
+            sidebarButton(
+                .incoming,
+                title: "Incoming",
+                icon: "antenna.radiowaves.left.and.right",
+                count: engine.discoveredVideos.count
+            )
+            sidebarButton(
+                .recordings,
+                title: "Recordings",
+                icon: "archivebox",
+                count: completedVideos.count
+            )
+
+            Spacer(minLength: 0)
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(engine.permissionWarnings.isEmpty ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                Text(healthSummary)
+                    .lineLimit(2)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(.bar)
+        }
+        .padding(.top, 16)
+    }
+
+    private func sidebarButton(
+        _ section: SidebarSection,
+        title: String,
+        icon: String,
+        count: Int
+    ) -> some View {
+        Button {
+            selectedSection = section
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: 13, weight: selectedSection == section ? .semibold : .regular))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                }
+            }
+            .foregroundStyle(selectedSection == section ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(selectedSection == section ? Color.accentColor.opacity(0.12) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        switch selectedSection {
+        case .scheduled:
+            scheduledContent
+        case .incoming:
+            incomingContent
+        case .recordings:
+            recordingsContent
+        }
+    }
+
+    private var scheduledContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                pageHeader(
+                    title: "Scheduled",
+                    subtitle: "Reprise watches your premieres and saves both the LIVE capture and final VOD."
+                )
 
                 if !engine.permissionWarnings.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(engine.permissionWarnings.keys.sorted()), id: \.self) { key in
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                Text(engine.permissionWarnings[key] ?? "")
-                                    .font(.caption)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer()
-                                if let fix = ProblemFixes.fix(for: key) {
-                                    Button {
-                                        fix.action()
-                                    } label: {
-                                        Label(fix.label, systemImage: fix.icon)
-                                            .font(.caption)
-                                    }
-                                    .controlSize(.small)
-                                }
-                            }
-                        }
-                        // Fix it, then test again — so you know where you stand instead of
-                        // waiting for tomorrow's automatic check (28-10-2026).
-                        HStack(spacing: 8) {
-                            testAgainButton
-                            if let result = engine.lastFullCheck, result.problems > 0 {
-                                Text("Still \(result.problems) problem\(result.problems == 1 ? "" : "s") at "
-                                     + result.date.formatted(date: .omitted, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .padding(.top, 2)
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .transition(.opacity)
+                    readinessWarning
+                        .padding(.top, 22)
                 }
 
-                if engine.permissionWarnings.isEmpty, showCheckResult, let result = engine.lastFullCheck,
-                   result.problems == 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("All checks passed at \(result.date.formatted(date: .omitted, time: .shortened)) — "
-                             + "folder, browser cookies, YouTube login, yt-dlp, ffmpeg and disk space are fine.")
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer()
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.green.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .transition(.opacity)
-                }
+                if let nextVideo = scheduledVideos.first {
+                    Text("NEXT PREMIERE")
+                        .sectionHeading()
 
-                if selectedSection == .tracked {
-                    if sortedVideos.isEmpty {
-                        ContentUnavailableView(
-                            "No premieres yet",
-                            systemImage: "video.badge.plus",
-                            description: Text("Click Add to track a YouTube premiere.")
-                        )
-                        .frame(maxHeight: .infinity)
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(sortedVideos) { video in
-                                    VideoRow(video: video, onDelete: { confirmDelete(video) })
-                                    Divider()
-                                }
+                    NextPremiereCard(
+                        video: nextVideo,
+                        checkLeadMinutes: engine.settings.checkLeadMinutes,
+                        onCheckNow: { engine.checkNow(nextVideo) },
+                        onRunPreflight: { engine.runPreflightCheckNow(nextVideo) },
+                        onEdit: { StatusItemController.shared?.showAddWindow(editing: nextVideo) },
+                        onReveal: { engine.revealFile(nextVideo) },
+                        onDelete: { confirmDelete(nextVideo) }
+                    )
+
+                    if scheduledVideos.count > 1 {
+                        Text("UP NEXT")
+                            .sectionHeading()
+                        VStack(spacing: 0) {
+                            ForEach(Array(scheduledVideos.dropFirst())) { video in
+                                ScheduledVideoRow(
+                                    video: video,
+                                    onCheckNow: { engine.checkNow(video) },
+                                    onEdit: { StatusItemController.shared?.showAddWindow(editing: video) },
+                                    onDelete: { confirmDelete(video) }
+                                )
+                                Divider()
                             }
-                            .padding(.horizontal)
-                            .padding(.top, 4)
-                            .padding(.bottom, 8)
                         }
                     }
                 } else {
-                    if engine.discoveredVideos.isEmpty {
-                        ContentUnavailableView(
-                            "No new premieres found",
-                            systemImage: "antenna.radiowaves.left.and.right",
-                            // Used to also say "— use the refresh button above to check now."
-                            // here, but that extra clause wrapped to a line more than this
-                            // pane has room for — invisible with auto-hiding scrollbars, but
-                            // ContentUnavailableView apparently scrolls internally when its
-                            // content doesn't fit, so with "Always show scroll bars" (common
-                            // with an external mouse, e.g. a MacBook docked at a desk) that
-                            // extra line showed up as a persistent scrollbar on a view with
-                            // nothing meaningful to scroll (user report + screenshot,
-                            // 04-10-2026). The refresh button has its own tooltip; it doesn't
-                            // need explaining here too.
-                            description: Text("Reprise checks your watched channels once a day.")
-                        )
-                        .frame(maxHeight: .infinity)
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(engine.discoveredVideos) { discovered in
-                                    HStack(alignment: .center, spacing: 10) {
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(discovered.title)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .lineLimit(1)
-                                            Text(discovered.channelName)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        // Same bordered-button family as Cancel/Add in the Add
-                                        // dialog — a plain-text "Dismiss" next to a solid "Add"
-                                        // read as mismatched weight and, top-aligned against a
-                                        // two-line title block, looked like it was floating
-                                        // above the row instead of belonging to it (user
-                                        // feedback, 16-10-2026).
-                                        Button("Dismiss") {
-                                            engine.dismissDiscovered(discovered)
-                                        }
-                                        .controlSize(.small)
-                                        Button("Add") {
-                                            StatusItemController.shared?.showAddWindow(discovered: discovered)
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                    }
-                                    .padding(.vertical, 8)
-                                    Divider()
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, 4)
-                            .padding(.bottom, 8)
-                        }
-                    }
+                    ContentUnavailableView(
+                        "No premieres scheduled",
+                        systemImage: "video.badge.plus",
+                        description: Text("Add a YouTube premiere and Reprise will take it from there.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 80)
                 }
-            }
-            .animation(.easeInOut(duration: 0.2), value: selectedSection)
-            .animation(.easeInOut(duration: 0.2), value: engine.permissionWarnings.isEmpty)
-            // idealHeight AND layoutPriority, not just min/maxHeight: VSplitView turned out
-            // to favor the *log* pane below for any extra window height — even with this
-            // pane's own maxHeight raised and an idealHeight added, confirmed 17-10-2026 by
-            // measuring the actual rendered panes (list stayed ~238px, log grew to ~261px,
-            // despite the list's new 440 cap) — the log pane has no maxHeight of its own, and
-            // VSplitView apparently treats that as implicit priority. layoutPriority(1) here
-            // (log pane stays at the SwiftUI default, 0) makes this pane's own min/ideal/max
-            // win that tug-of-war instead.
-            .frame(minHeight: 160, idealHeight: videoListMaxHeight, maxHeight: videoListMaxHeight)
-            .layoutPriority(1)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Log")
-                    .font(.caption).bold()
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                    .padding(.top, 6)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(engine.logLines.enumerated()), id: \.offset) { idx, line in
-                                // ⚠️/❌ zijn al de bestaande markering voor "dit is geen
-                                // routineregel" door de hele log heen (schrijftest, cookies,
-                                // verouderde yt-dlp, noodformaat, enz.) — vet + kleur maakt
-                                // ze ook visueel meteen te onderscheiden van de vele gewone
-                                // Check/download-regels eromheen, i.p.v. ze te moeten lezen
-                                // om te zien dat het geen routine was (gebruikersfeedback,
-                                // 11-10-2026, specifiek over de noodformaat-regel).
-                                let isWaarschuwing = line.contains("⚠️") || line.contains("❌")
-                                Text(line)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .fontWeight(isWaarschuwing ? .bold : .regular)
-                                    .foregroundStyle(isWaarschuwing ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
-                                    .id(idx)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
+                if let completedVideo = completedVideos.first {
+                    Text("RECENTLY COMPLETED")
+                        .sectionHeading()
+                    CompletedVideoRow(video: completedVideo) {
+                        engine.revealFile(completedVideo)
                     }
-                    .onChange(of: engine.logLines.count) { _, _ in
-                        if let last = engine.logLines.indices.last {
-                            proxy.scrollTo(last, anchor: .bottom)
+                }
+
+                activityDisclosure
+                    .padding(.top, 24)
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .navigationTitle("reprise_new")
+    }
+
+    private var incomingContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Incoming")
+                            .font(.largeTitle.weight(.semibold))
+                        Text("New premieres found on channels you watch.")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        refreshIncoming()
+                    } label: {
+                        if isRefreshingIncoming {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Check now", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(isRefreshingIncoming)
+                }
+
+                if engine.discoveredVideos.isEmpty {
+                    if engine.channels.isEmpty {
+                        VStack(spacing: 14) {
+                            Image(systemName: "person.2.badge.plus")
+                                .font(.system(size: 34))
+                                .foregroundStyle(.secondary)
+                            Text("No channels watched yet")
+                                .font(.title3.weight(.semibold))
+                            Text("Incoming is where Reprise places new premieres it finds for you. Add a channel to start discovering them.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 380)
+                            Button {
+                                StatusItemController.shared?.showSettingsWindow()
+                            } label: {
+                                Label("Add a channel", systemImage: "plus")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 100)
+                    } else {
+                        ContentUnavailableView(
+                            "Nothing new right now",
+                            systemImage: "antenna.radiowaves.left.and.right",
+                            description: Text("Reprise checks watched channels once a day. Use Check now if you do not want to wait.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 100)
+                    }
+                } else {
+                    Text("FOUND ON WATCHED CHANNELS")
+                        .sectionHeading()
+                    VStack(spacing: 0) {
+                        ForEach(engine.discoveredVideos) { discovered in
+                            DiscoveredVideoRow(
+                                video: discovered,
+                                onDismiss: { engine.dismissDiscovered(discovered) },
+                                onAdd: { StatusItemController.shared?.showAddWindow(discovered: discovered) }
+                            )
+                            Divider()
                         }
                     }
                 }
             }
-            .frame(minHeight: 120)
-            .background(Color(nsColor: .textBackgroundColor))
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // minHeight raised from 480 alongside videoListMaxHeight's bump to 440 (see that
-        // property's comment) — without this the window's own floor would still squeeze
-        // the list pane back down below its new cap whenever it opens at minimum size.
-        .frame(minWidth: 620, minHeight: 560)
+        .navigationTitle("reprise_new")
+    }
+
+    private var recordingsContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                pageHeader(
+                    title: "Recordings",
+                    subtitle: "Completed captures stay here; the files remain in your download folder."
+                )
+
+                if completedVideos.isEmpty {
+                    ContentUnavailableView(
+                        "No completed recordings yet",
+                        systemImage: "archivebox",
+                        description: Text("Finished LIVE and VOD captures will appear here.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 100)
+                } else {
+                    Text("COMPLETED")
+                        .sectionHeading()
+                    VStack(spacing: 0) {
+                        ForEach(completedVideos) { video in
+                            CompletedVideoRow(video: video) {
+                                engine.revealFile(video)
+                            }
+                            Divider()
+                        }
+                    }
+                    Button(role: .destructive) {
+                        confirmClearHistory()
+                    } label: {
+                        Label("Clear completed recordings from this list", systemImage: "trash")
+                    }
+                    .padding(.top, 20)
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .navigationTitle("reprise_new")
+    }
+
+    private func pageHeader(title: String, subtitle: String) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.largeTitle.weight(.semibold))
+                Text(subtitle)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if selectedSection == .scheduled {
+                Button {
+                    StatusItemController.shared?.showAddWindow()
+                } label: {
+                    Label("Add premiere", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private var readinessWarning: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Reprise needs attention before the next recording.")
+                    .font(.headline)
+                Spacer()
+                Button("Check again") {
+                    runChecks()
+                }
+                .controlSize(.small)
+                .disabled(engine.isCheckingAll)
+            }
+            ForEach(Array(engine.permissionWarnings.keys.sorted()), id: \.self) { key in
+                HStack(alignment: .top, spacing: 8) {
+                    Text(engine.permissionWarnings[key] ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let fix = ProblemFixes.fix(for: key) {
+                        Button(fix.label) {
+                            fix.action()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var activityDisclosure: some View {
+        DisclosureGroup(isExpanded: $activityIsExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                ActivityCheckRow(
+                    title: "Download folder",
+                    detail: engine.permissionWarnings["download-folder"] ?? "Accessible"
+                )
+                ActivityCheckRow(
+                    title: "Browser access",
+                    detail: engine.permissionWarnings["cookie-access"] ?? "Ready for login-gated premieres"
+                )
+                ActivityCheckRow(
+                    title: "Tools",
+                    detail: engine.permissionWarnings["external-tools"] ?? "yt-dlp and ffmpeg are available"
+                )
+
+                DisclosureGroup("Technical log", isExpanded: $technicalLogIsExpanded) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(engine.logLines.suffix(80).enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                    .padding(.top, 6)
+                }
+                .font(.caption)
+            }
+            .padding(.top, 12)
+        } label: {
+            HStack {
+                Label("Activity", systemImage: "waveform.path.ecg")
+                    .font(.headline)
+                Spacer()
+                Text(healthSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func runChecks() {
+        Task {
+            await engine.runAllChecks()
+        }
+    }
+
+    private func refreshIncoming() {
+        guard !isRefreshingIncoming else { return }
+        isRefreshingIncoming = true
+        Task {
+            await engine.checkChannels(force: true)
+            isRefreshingIncoming = false
+        }
     }
 
     private func confirmDelete(_ video: MonitoredVideo) {
         let alert = NSAlert()
-        alert.messageText = "Delete premiere?"
-        alert.informativeText = "\"\(video.label)\" will no longer be tracked."
+        alert.messageText = "Remove premiere?"
+        alert.informativeText = "\"\(video.label)\" will no longer be tracked. Downloaded files are not touched."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
             engine.removeVideo(video)
@@ -427,12 +517,11 @@ struct ContentView: View {
     }
 
     private func confirmClearHistory() {
-        let doneCount = engine.videos.filter { $0.status == .done }.count
-        guard doneCount > 0 else { return }
+        let count = completedVideos.count
+        guard count > 0 else { return }
         let alert = NSAlert()
-        alert.messageText = "Clear completed premieres?"
-        alert.informativeText = "Removes \(doneCount) finished premiere\(doneCount == 1 ? "" : "s") from the list. "
-            + "Downloaded files themselves are not touched."
+        alert.messageText = "Clear completed recordings?"
+        alert.informativeText = "Removes \(count) finished recording\(count == 1 ? "" : "s") from this list. Downloaded files are not touched."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
@@ -440,22 +529,15 @@ struct ContentView: View {
             engine.clearCompleted()
         }
     }
-
-    private func confirmQuit() {
-        let alert = NSAlert()
-        alert.messageText = "Quit Reprise?"
-        alert.informativeText = "Automatic checking and downloading will stop until you open the app again."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            StatusItemController.shared?.quit()
-        }
-    }
 }
 
-struct VideoRow: View {
+private struct NextPremiereCard: View {
     let video: MonitoredVideo
+    let checkLeadMinutes: Double
+    let onCheckNow: () -> Void
+    let onRunPreflight: () -> Void
+    let onEdit: () -> Void
+    let onReveal: () -> Void
     let onDelete: () -> Void
     @ObservedObject private var engine = MonitorEngine.shared
 
@@ -463,22 +545,144 @@ struct VideoRow: View {
         video.status == .downloadingLive || video.status == .downloadingVod
     }
 
-    // Flat gray the whole "waiting" stretch (which can be days) made it hard to tell
-    // whether anything was actually close to happening — user feedback, 03-10-2026.
-    // Active checking only starts checkLeadMinutes before the scheduled time (15 min
-    // by default), but this just nudges the row's color in the last hour so it reads
-    // as "getting close" well before that. Orange, matching "Waiting for VOD" — tried
-    // teal first to keep the two visually distinct (different kind of "waiting"), but
-    // user feedback the same day preferred one shared color for every "something's
-    // about to happen" state instead.
-    private var isSoon: Bool {
-        guard video.status == .waiting else { return false }
-        let secondsUntil = video.scheduledDate.timeIntervalSinceNow
-        return secondsUntil > 0 && secondsUntil <= 3600
+    private var monitoringDate: Date {
+        video.scheduledDate.addingTimeInterval(-(checkLeadMinutes * 60))
     }
 
+    private var currentStep: Int {
+        switch video.status {
+        case .waiting: return 1
+        case .downloadingLive: return 2
+        case .vodPending, .downloadingVod: return 3
+        case .done: return 4
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                VideoThumbnail(video: video, width: 98, height: 55)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(video.label)
+                        .font(.headline)
+                        .lineLimit(2)
+                    HStack(spacing: 10) {
+                        Label(video.scheduledDate.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        if let quality = video.quality, quality != .best {
+                            Text(quality.displayName)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 5) {
+                    StatusBadge(status: video.status)
+                    if video.status == .waiting {
+                        Text("in \(video.scheduledDate, style: .relative)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let progress = engine.downloadProgress[video.id] {
+                        Text(progress)
+                            .font(.caption)
+                            .foregroundStyle(StatusBadge.color(for: video.status))
+                    }
+                }
+                Menu {
+                    Button("Check now", action: onCheckNow)
+                        .disabled(isBusy)
+                    Button("Run pre-flight check", action: onRunPreflight)
+                    Divider()
+                    Button("Edit premiere", action: onEdit)
+                        .disabled(isBusy)
+                    Button("Show in Finder", action: onReveal)
+                    Divider()
+                    Button("Remove premiere", role: .destructive, action: onDelete)
+                        .disabled(isBusy)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .imageScale(.large)
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("Actions for \(video.label)")
+            }
+
+            Divider()
+                .padding(.vertical, 18)
+
+            HStack(alignment: .top, spacing: 0) {
+                LifecycleStep(
+                    title: "Verified",
+                    detail: "link, access and space",
+                    state: currentStep >= 1 ? .complete : .pending
+                )
+                LifecycleConnector(active: currentStep >= 2)
+                LifecycleStep(
+                    title: "Monitoring",
+                    detail: "\(monitoringDate.formatted(date: .omitted, time: .shortened))",
+                    state: currentStep == 1 ? .active : currentStep > 1 ? .complete : .pending
+                )
+                LifecycleConnector(active: currentStep >= 3)
+                LifecycleStep(
+                    title: "Capture LIVE",
+                    detail: "from the beginning",
+                    state: currentStep == 2 ? .active : currentStep > 2 ? .complete : .pending
+                )
+                LifecycleConnector(active: currentStep >= 4)
+                LifecycleStep(
+                    title: "Save VOD",
+                    detail: "final full version",
+                    state: currentStep >= 3 ? (currentStep == 4 ? .complete : .active) : .pending
+                )
+            }
+            .padding(.bottom, 2)
+        }
+        .padding(18)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct ScheduledVideoRow: View {
+    let video: MonitoredVideo
+    let onCheckNow: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VideoThumbnail(video: video, width: 52, height: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(video.label)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(video.scheduledDate.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            StatusBadge(status: video.status)
+            Menu {
+                Button("Check now", action: onCheckNow)
+                Button("Edit premiere", action: onEdit)
+                Divider()
+                Button("Remove premiere", role: .destructive, action: onDelete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 24, height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Actions for \(video.label)")
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct CompletedVideoRow: View {
+    let video: MonitoredVideo
+    let onReveal: () -> Void
+
     private var fileSizeText: String? {
-        guard video.status == .done, let path = video.finalFilePath,
+        guard let path = video.finalFilePath,
               let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 else {
             return nil
         }
@@ -486,158 +690,211 @@ struct VideoRow: View {
     }
 
     var body: some View {
-        HStack {
-            AsyncImage(url: video.thumbnailURL) { phase in
-                if let image = phase.image {
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    Color.gray.opacity(0.15)
-                }
-            }
-            .frame(width: 64, height: 36)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-                .animation(.easeInOut(duration: 0.2), value: video.status)
-
-            VStack(alignment: .leading, spacing: 2) {
-                // Without a line limit, a title just a bit longer than the others eats into
-                // the Spacer below and nudges the icon buttons out of column with every other
-                // row — truncating keeps every row's trailing icons at the exact same x.
+        HStack(spacing: 12) {
+            VideoThumbnail(video: video, width: 52, height: 30)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(video.label)
-                    .font(.body)
+                    .font(.body.weight(.medium))
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(video.scheduledDate.formatted(date: .abbreviated, time: .shortened))
+                HStack(spacing: 7) {
+                    Label("LIVE + VOD", systemImage: "checkmark.circle.fill")
+                    if let fileSizeText { Text(fileSizeText) }
+                    if video.qualityConfirmed == true { Text("Best available confirmed") }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Show in Finder", action: onReveal)
+                .controlSize(.small)
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct DiscoveredVideoRow: View {
+    let video: DiscoveredVideo
+    let onDismiss: () -> Void
+    let onAdd: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles.tv")
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(video.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(video.channelName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // Only shown for the non-default choice — the common case (Best) needs
-                // no extra label, same reasoning as the vega/side-dish badges elsewhere.
-                if let quality = video.quality, quality != .best {
-                    Text(quality.displayName)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                // Same proof shown in the push notification/log, now visible without
-                // digging into either — only shown once the VOD is actually done, and
-                // only when there was something real to compare against (nil means no
-                // ceiling was known for this video, not a silent "assume it's fine").
-                if video.status == .done, let confirmed = video.qualityConfirmed {
-                    HStack(spacing: 3) {
-                        Image(systemName: confirmed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                        Text(confirmed ? "Confirmed best available" : "Lower than available")
+                HStack(spacing: 10) {
+                    if let discoveredAt = video.discoveredAt {
+                        Label(
+                            "Found \(discoveredAt.formatted(date: .abbreviated, time: .shortened))",
+                            systemImage: "clock"
+                        )
                     }
-                    .font(.caption2)
-                    .foregroundStyle(confirmed ? AnyShapeStyle(Color.green) : AnyShapeStyle(Color.orange))
+                    if let scheduledDate = video.scheduledDate {
+                        Label(
+                            "Premieres \(scheduledDate.formatted(date: .abbreviated, time: .shortened))",
+                            systemImage: "calendar"
+                        )
+                        .foregroundStyle(.primary)
+                    } else {
+                        Label("Premiere time not available yet", systemImage: "calendar.badge.questionmark")
+                    }
                 }
-                if video.status == .waiting {
-                    // SwiftUI's built-in relative style ticks down on its own — no timer needed.
-                    Text("in \(video.scheduledDate, style: .relative)")
-                        .font(.caption2)
-                        .fontWeight(isSoon ? .semibold : .regular)
-                        .foregroundStyle(isSoon ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
-                }
-                if let lastChecked = video.lastChecked {
-                    Text("Last checked \(lastChecked, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                if isBusy, let progress = engine.downloadProgress[video.id] {
-                    Text(progress)
-                        .font(.caption2)
-                        .foregroundStyle(statusColor)
-                }
-                if let fileSizeText {
-                    Text(fileSizeText)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
-
             Spacer()
-
-            Button {
-                MonitorEngine.shared.checkNow(video)
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .disabled(isBusy)
-            .contentShape(Rectangle())
-            .help("Check now")
-            .accessibilityLabel("Check now")
-
-            Button {
-                MonitorEngine.shared.runPreflightCheckNow(video)
-            } label: {
-                Image(systemName: "checkmark.shield")
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .help("Run pre-flight check now (yt-dlp, access, disk space, link)")
-            .accessibilityLabel("Run pre-flight check")
-
-            Button {
-                StatusItemController.shared?.showAddWindow(editing: video)
-            } label: {
-                Image(systemName: "pencil")
-            }
-            .buttonStyle(.plain)
-            .disabled(isBusy)
-            .contentShape(Rectangle())
-            .help("Edit")
-            .accessibilityLabel("Edit")
-
-            Button {
-                MonitorEngine.shared.revealFile(video)
-            } label: {
-                Image(systemName: "folder")
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .help("Show in Finder")
-            .accessibilityLabel("Show in Finder")
-
-            Button(role: .destructive) {
-                onDelete()
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.red)
-            .disabled(isBusy)
-            .contentShape(Rectangle())
-            .help(isBusy ? "Can't delete while downloading" : "Delete")
-            .accessibilityLabel("Delete")
-
-            HStack(spacing: 4) {
-                if video.status == .done {
-                    Image(systemName: "checkmark.circle.fill")
-                }
-                Text(isSoon ? "Soon" : video.status.displayName)
-            }
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .frame(minWidth: 66)
-            .background(statusColor.opacity(0.15))
-            .foregroundStyle(statusColor)
-            .clipShape(Capsule())
-            .animation(.easeInOut(duration: 0.2), value: video.status)
+            Button("Dismiss", action: onDismiss)
+                .controlSize(.small)
+            Button("Add", action: onAdd)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
         }
+        .padding(.vertical, 12)
+    }
+}
+
+private struct VideoThumbnail: View {
+    let video: MonitoredVideo
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        AsyncImage(url: video.thumbnailURL) { phase in
+            if let image = phase.image {
+                image.resizable().aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    Color.secondary.opacity(0.14)
+                    Image(systemName: "play.rectangle.fill")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+private struct StatusBadge: View {
+    let status: VideoStatus
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon(for: status))
+            Text(status.displayName)
+        }
+        .font(.caption)
+        .foregroundStyle(Self.color(for: status))
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .background(Self.color(for: status).opacity(0.12), in: Capsule())
     }
 
-    private var statusColor: Color {
-        if isSoon { return .orange }
-        switch video.status {
-        case .waiting: return .gray
+    static func color(for status: VideoStatus) -> Color {
+        switch status {
+        case .waiting: return .secondary
         case .downloadingLive: return .red
         case .vodPending: return .orange
         case .downloadingVod: return .blue
         case .done: return .green
         }
+    }
+
+    private func icon(for status: VideoStatus) -> String {
+        switch status {
+        case .waiting: return "clock"
+        case .downloadingLive: return "record.circle"
+        case .vodPending: return "hourglass"
+        case .downloadingVod: return "arrow.down.circle"
+        case .done: return "checkmark.circle.fill"
+        }
+    }
+}
+
+private struct LifecycleStep: View {
+    enum State: Equatable { case complete, active, pending }
+
+    let title: String
+    let detail: String
+    let state: State
+
+    private var color: Color {
+        switch state {
+        case .complete: return .green
+        case .active: return .blue
+        case .pending: return .secondary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+                .overlay {
+                    if state == .active {
+                        Circle().stroke(color.opacity(0.22), lineWidth: 6)
+                    }
+                }
+            Text(title)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct LifecycleConnector: View {
+    let active: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(active ? Color.green.opacity(0.45) : Color.secondary.opacity(0.18))
+            .frame(width: 20, height: 1)
+            .padding(.top, 5)
+    }
+}
+
+private struct ActivityCheckRow: View {
+    let title: String
+    let detail: String
+
+    private var hasProblem: Bool {
+        detail.lowercased().contains("can't") || detail.lowercased().contains("missing")
+            || detail.lowercased().contains("fail") || detail.lowercased().contains("problem")
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: hasProblem ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(hasProblem ? Color.orange : Color.green)
+            Text(title)
+                .font(.caption.weight(.medium))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+}
+
+private extension View {
+    func sectionHeading() -> some View {
+        self
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 28)
+            .padding(.bottom, 10)
     }
 }
