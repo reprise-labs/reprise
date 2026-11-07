@@ -8,6 +8,10 @@ Dit bestand is de enige bron; `CLAUDE.md` verwijst hiernaar. Houd het actueel.
   Reprise draait hier ook echt en neemt premieres op.
 - **Niet pushen, geen release maken en `scripts/publish_release.sh` niet draaien zonder
   uitdrukkelijke toestemming** van de gebruiker. Lokaal committen mag.
+- Pushen naar `reprise-labs/reprise` kan alleen met het gh-account `reprise-labs` (het actieve
+  account `andrevanos` heeft geen schrijfrechten). Zonder het actieve account te wisselen:
+  `git -c credential.helper= -c credential.helper='!f(){ echo username=x-access-token; echo "password=$(gh auth token --user reprise-labs)"; }; f' push`
+  en voor `gh`: `GH_TOKEN=$(gh auth token --user reprise-labs) gh …`.
 - `./install.sh` herstart de draaiende app. Kijk eerst in `premieres.log` (en `pgrep yt-dlp`)
   of er geen opname bezig is.
 - Bugs: eerst de oorzaak aantonen, dan pas fixen (zie "Debuggen" hieronder).
